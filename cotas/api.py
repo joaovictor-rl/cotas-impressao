@@ -6,7 +6,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import banco, config
+from . import banco, config, diagnostico
 
 log = logging.getLogger("cotas.api")
 
@@ -87,7 +87,8 @@ class _Handler(BaseHTTPRequestHandler):
         if url.path != "/saldo" or not usuario:
             return self.responder(404, {"erro": "não encontrado"})
         dados = banco.saldo(usuario)
-        dados.update(banco.estado(), trabalhos=banco.ultimos(usuario))
+        dados.update(banco.estado(), trabalhos=banco.ultimos(usuario),
+                     impressoras_com_problema=diagnostico.problemas_impressoras())
         self.responder(200, dados)
 
     def do_POST(self):

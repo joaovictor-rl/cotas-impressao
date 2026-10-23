@@ -9,13 +9,14 @@
   cotas-admin historico maria --dias 30
   cotas-admin senha                 troca a senha do painel
   cotas-admin ativar | desativar    liga/desliga o controle
+  cotas-admin diagnostico           verifica serviço, impressoras e fila
 """
 import argparse
 import getpass
 import sqlite3
 import sys
 
-from . import banco, config
+from . import banco, config, diagnostico
 
 
 def tabela(cabecalho, linhas):
@@ -90,6 +91,15 @@ def controle(ativo):
     return comando
 
 
+def verificar(a, cfg):
+    simbolos = {"ok": "✓", "aviso": "!", "erro": "✗"}
+    itens = diagnostico.relatorio()
+    for situacao, texto in itens:
+        print(f" {simbolos[situacao]}  {texto}")
+    if any(s == "erro" for s, _ in itens):
+        sys.exit(1)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="cotas-admin", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -114,6 +124,7 @@ def main(argv=None):
     comando("senha", senha)
     comando("ativar", controle(True))
     comando("desativar", controle(False))
+    comando("diagnostico", verificar)
 
     a = p.parse_args(argv)
     try:

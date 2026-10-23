@@ -22,6 +22,7 @@ CORES = {
     "fundo": "#f6f7f9", "cartao": "#ffffff", "texto": "#1f2328", "suave": "#656d76",
     "verde": "#1a7f37", "laranja": "#bc4c00", "vermelho": "#cf222e", "borda": "#d0d7de",
     "aviso_fundo": "#fff8c5", "aviso_borda": "#d4a72c", "aviso_texto": "#6f4b00",
+    "erro_fundo": "#ffebe9", "erro_borda": "#ff8182", "erro_texto": "#82071e",
 }
 SITUACOES = {
     "bloqueado": ("✗", "vermelho", "bloqueado"),
@@ -155,6 +156,8 @@ class Painel:
     def montar_principal(self):
         self.aviso = self.caixa("aviso_fundo", "aviso_borda", padx=12, pady=8)
         self.lbl_aviso = self.texto(self.aviso, fonte="peq", cor="aviso_texto", fundo="aviso_fundo")
+        self.problema = self.caixa("erro_fundo", "erro_borda", padx=12, pady=8)
+        self.lbl_problema = self.texto(self.problema, fonte="peq", cor="erro_texto", fundo="erro_fundo")
 
         self.cartao = self.caixa(padx=20, pady=16)
         self.cartao.pack(padx=14, pady=(14, 10), fill="x")
@@ -213,6 +216,13 @@ class Painel:
         self.barra.config(value=0)
         self.lbl_renova.config(text="")
 
+    def mostrar_problemas(self, problemas):
+        if not problemas:
+            return self.problema.pack_forget()
+        self.lbl_problema.config(text="\n\n".join(p["mensagem"] for p in problemas))
+        if not self.problema.winfo_ismapped():
+            self.problema.pack(padx=14, pady=(14, 0), fill="x", before=self.cartao)
+
     def mostrar_estado(self, d):
         self.controle_ativo = d["controle_ativo"]
         if self.controle_ativo:
@@ -237,6 +247,7 @@ class Painel:
         else:
             self.mostrar(dados)
             self.mostrar_estado(dados)
+            self.mostrar_problemas(dados["impressoras_com_problema"])
             self.verificar_bloqueios(dados["trabalhos"])
             if not dados["senha_definida"] and not self.pediu_senha:
                 self.pedir_senha()
