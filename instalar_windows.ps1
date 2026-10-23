@@ -1,5 +1,5 @@
 # Instala o controle de cotas de impressao no Windows 10/11.
-# Jeito mais facil: de dois cliques em INSTALAR.bat (ele chama este script
+# Jeito mais facil: de dois cliques em INSTALAR_WINDOWS.bat (ele chama este script
 # como Administrador). Se o Python nao existir, ele e instalado sozinho.
 
 $ErrorActionPreference = "Continue"
@@ -7,10 +7,19 @@ $VERSAO_PY = "3.12.10"
 
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
          ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $admin) { Write-Host "Rode pelo INSTALAR.bat (ou como Administrador)." -ForegroundColor Red; exit 1 }
+if (-not $admin) { Write-Host "Rode pelo INSTALAR_WINDOWS.bat (ou como Administrador)." -ForegroundColor Red; exit 1 }
 
 function Falhar($msg) {
     Write-Host ""; Write-Host "ERRO: $msg" -ForegroundColor Red; exit 1
+}
+
+# Outro controle de cotas junto com este pode bloquear ou contar impressoes em dobro
+$outros = Get-Service -ErrorAction SilentlyContinue |
+    Where-Object { "$($_.Name) $($_.DisplayName)" -match "PaperCut|Pharos|PrinterLogic|PrintManager" }
+if ($outros) {
+    Write-Host "ATENCAO: outro controle de impressao instalado: $($outros.DisplayName -join ', ')" -ForegroundColor Yellow
+    Write-Host "Os dois juntos podem bloquear ou contar as impressoes em dobro." -ForegroundColor Yellow
+    if ((Read-Host "Continuar mesmo assim? [s/N]") -notmatch "^[sS]$") { Falhar "instalacao cancelada." }
 }
 
 # ---------------------------------------------------------------- Python

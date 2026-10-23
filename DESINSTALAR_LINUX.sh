@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Remove o controle de cotas e devolve as impressoras ao endereço original.
-# Uso:  bash desinstalar_linux.sh        (mantém o histórico)
-#       bash desinstalar_linux.sh --tudo (apaga também config e histórico)
+# Uso:  bash DESINSTALAR_LINUX.sh        (mantém o histórico)
+#       bash DESINSTALAR_LINUX.sh --tudo (apaga também config e histórico)
 set -u
 [ "$(id -u)" -eq 0 ] || exec sudo bash "$(readlink -f "$0")" "$@"
 

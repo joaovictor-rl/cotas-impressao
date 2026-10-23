@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Instala o controle de cotas de impressão no Linux (Zorin, Ubuntu, Mint, Debian, Fedora).
-# Uso:  bash instalar_linux.sh      (pede a senha de administrador sozinho)
+# Uso:  bash INSTALAR_LINUX.sh      (pede a senha de administrador sozinho)
 set -euo pipefail
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -10,6 +10,16 @@ fi
 
 ORIGEM="$(cd "$(dirname "$0")" && pwd)"
 DESTINO=/opt/cotas-impressao
+
+# Outro controle de cotas junto com este pode bloquear ou contar impressões em dobro
+for outro in tea4cups pykota; do
+  if [ -e /usr/lib/cups/backend/$outro ] || [ -e /usr/libexec/cups/backend/$outro ]; then
+    echo "ATENÇÃO: $outro (outro controle de cotas) está instalado neste computador."
+    echo "Os dois juntos podem bloquear ou contar as impressões em dobro."
+    read -r -p "Continuar mesmo assim? [s/N] " resposta || resposta=""
+    [[ "$resposta" =~ ^[sS]$ ]] || { echo "Instalação cancelada."; exit 1; }
+  fi
+done
 
 echo ">> Instalando dependências..."
 if command -v apt-get >/dev/null; then

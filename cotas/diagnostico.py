@@ -136,8 +136,9 @@ def _relatorio_linux():
     pastas = ["/usr/lib/cups/backend", "/usr/libexec/cups/backend"]
     tem_backend = any(os.path.exists(os.path.join(p, "cotas")) for p in pastas)
     itens = []
-    if any(os.path.exists(os.path.join(p, "tea4cups")) for p in pastas):
-        itens.append(("aviso", "Tea4CUPS instalado: outro controle de cotas pode entrar em conflito"))
+    for outro in ("tea4cups", "pykota"):
+        if any(os.path.exists(os.path.join(p, outro)) for p in pastas):
+            itens.append(("aviso", f"{outro} instalado: outro controle de cotas pode entrar em conflito"))
 
     for nome, info in cups.Connection().getPrinters().items():
         uri = info.get("device-uri", "")
@@ -145,7 +146,7 @@ def _relatorio_linux():
             itens.append(("aviso", f"{nome}: ainda não passa pelo controle ({uri})"))
         elif not tem_backend:
             itens.append(("erro", f"{nome}: aponta para o controle, mas o backend 'cotas' não "
-                                  "existe. Reinstale ou rode o desinstalar_linux.sh"))
+                                  "existe. Reinstale ou rode o DESINSTALAR_LINUX.sh"))
         else:
             itens.append(("ok", f"{nome}: passa pelo controle ({uri.removeprefix(PREFIXO)})"))
     return itens
