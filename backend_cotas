@@ -1,0 +1,31 @@
+#!/usr/bin/python3
+# Lançador do backend "cotas" do CUPS. O instalador copia este arquivo para
+# /usr/lib/cups/backend/cotas.
+import os
+import sys
+
+PREFIXO = "cotas:/"
+
+try:
+    sys.path.insert(0, "/opt/cotas-impressao")
+    from cotas.backend_cups import main
+except Exception:
+    main = None
+
+if main is not None:
+    sys.exit(main(sys.argv))
+
+# O programa foi apagado ou está quebrado: em vez de parar a impressora,
+# passa o trabalho direto para o backend original, sem controle de cotas.
+if len(sys.argv) == 1:
+    sys.exit(0)
+uri = os.environ.get("DEVICE_URI", "")
+original = uri[len(PREFIXO):] if uri.startswith(PREFIXO) else ""
+if not original:
+    print("ERROR: endereço inválido para o backend cotas", file=sys.stderr)
+    sys.exit(1)
+pasta = os.environ.get("CUPS_SERVERBIN", "/usr/lib/cups")
+programa = os.path.join(pasta, "backend", original.split(":", 1)[0])
+print("INFO: controle de cotas indisponível; imprimindo sem controle", file=sys.stderr)
+os.environ["DEVICE_URI"] = original
+os.execv(programa, [original] + sys.argv[1:])
