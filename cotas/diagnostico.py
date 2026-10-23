@@ -146,7 +146,7 @@ def _relatorio_linux():
             itens.append(("aviso", f"{nome}: ainda não passa pelo controle ({uri})"))
         elif not tem_backend:
             itens.append(("erro", f"{nome}: aponta para o controle, mas o backend 'cotas' não "
-                                  "existe. Reinstale ou rode o DESINSTALAR_LINUX.sh"))
+                                  "existe. Rode o REPARAR_LINUX.sh"))
         else:
             itens.append(("ok", f"{nome}: passa pelo controle ({uri.removeprefix(PREFIXO)})"))
     return itens
