@@ -86,7 +86,6 @@ class Painel:
         self.raiz, self.usuario, self.servico, self.trava = raiz, usuario, servico, trava
         self.ultimo_id = None
         self.controle_ativo = True
-        self.admin_aberto = False
         self.senha_admin = None
         self.timer_trava = None
         self.limites = {}
@@ -95,7 +94,6 @@ class Painel:
 
         raiz.title("Minha cota de impressão")
         raiz.configure(bg=CORES["fundo"])
-        raiz.resizable(False, False)
         raiz.protocol("WM_DELETE_WINDOW", self.minimizar)
         base = tkfont.nametofont("TkDefaultFont").actual("family")
         self.fontes = {"peq": (base, 9), "normal": (base, 10), "neg": (base, 10, "bold"),
@@ -130,7 +128,6 @@ class Painel:
     def janela(self, titulo, cor="texto"):
         j = tk.Toplevel(self.raiz, bg=CORES["cartao"], padx=22, pady=18)
         j.title(titulo)
-        j.resizable(False, False)
         j.transient(self.raiz)
         self.texto(j, titulo, "grande", cor)
         return j
@@ -141,6 +138,12 @@ class Painel:
         j.geometry(f"+{max(0, x)}+{max(0, self.raiz.winfo_rooty() + 30)}")
         j.lift()
         j.focus_force()
+
+    def ajustar_tamanho(self):
+        # Alguns gerenciadores de janela (como o do Zorin) mantêm o tamanho antigo
+        # quando algo aparece ou some; isto faz a janela acompanhar o conteúdo
+        self.raiz.update_idletasks()
+        self.raiz.geometry("")
 
     def configurar_estilo(self):
         estilo = ttk.Style(self.raiz)
@@ -222,25 +225,34 @@ class Painel:
 
     def mostrar_problemas(self, problemas):
         if not problemas:
-            return self.problema.pack_forget()
+            if self.problema.winfo_ismapped():
+                self.problema.pack_forget()
+                self.ajustar_tamanho()
+            return
         self.lbl_problema.config(text="\n\n".join(p["mensagem"] for p in problemas))
         if not self.problema.winfo_ismapped():
             self.problema.pack(padx=14, pady=(14, 0), fill="x", before=self.cartao)
+            self.ajustar_tamanho()
 
     def mostrar_estado(self, d):
         self.controle_ativo = d["controle_ativo"]
         if self.controle_ativo:
-            self.aviso.pack_forget()
-            self.btn_controle.config(text="Desativar controle")
-            self.lbl_estado.config(text="ATIVO: cada usuário tem seu limite diário.")
+            if self.aviso.winfo_ismapped():
+                self.aviso.pack_forget()
+                self.ajustar_tamanho()
+            if self.senha_admin and self.admin_aberto():
+                self.btn_controle.config(text="Desativar controle")
+                self.lbl_estado.config(text="ATIVO: cada usuário tem seu limite diário.")
             return
         desde = f" desde {d['controle_alterado_em']}" if d["controle_alterado_em"] else ""
         self.lbl_aviso.config(text=f"Controle de impressão desativado{desde}.\n"
                                    "As impressões estão liberadas e não são descontadas.")
         if not self.aviso.winfo_ismapped():
             self.aviso.pack(padx=14, pady=(14, 0), fill="x", before=self.cartao)
-        self.btn_controle.config(text="Reativar controle")
-        self.lbl_estado.config(text="DESATIVADO: todos imprimem sem limite e nada é descontado.")
+            self.ajustar_tamanho()
+        if self.senha_admin and self.admin_aberto():
+            self.btn_controle.config(text="Reativar controle")
+            self.lbl_estado.config(text="DESATIVADO: todos imprimem sem limite e nada é descontado.")
 
     # ------------------------------------------------------------ atualização
     def atualizar(self):
@@ -279,7 +291,7 @@ class Painel:
 
     def minimizar(self):
         # O painel nunca fecha de verdade, para continuar avisando dos bloqueios
-        if self.admin_aberto:
+        if self.admin_aberto():
             self.travar_admin()
         self.raiz.iconify()
 
@@ -307,30 +319,55 @@ class Painel:
         self.centralizar(a)
 
     # ------------------------------------------------------------ administrador
+    # Abre numa janela própria, que já nasce do tamanho certo. Dentro do painel ela
+    # dependia de a janela crescer, e no Zorin a janela ficava cortada.
     def montar_admin(self):
         rodape = self.linha(self.raiz, "fundo")
         rodape.pack(padx=14, pady=(0, 6))
-        self.btn_admin = tk.Label(rodape, text="⚙ Administrador", font=self.fontes["peq"],
-                                  bg=CORES["fundo"], fg="#8c959f", cursor="hand2")
-        self.btn_admin.pack(side="right")
-        self.btn_admin.bind("<Button-1>", lambda e: self.travar_admin() if self.admin_aberto
-                            else self.abrir_admin())
-        self.admin = self.caixa(padx=16, pady=10)
+        botao = tk.Label(rodape, text="⚙ Administrador", font=self.fontes["peq"],
+                         bg=CORES["fundo"], fg="#8c959f", cursor="hand2")
+        botao.pack(side="right")
+        botao.bind("<Button-1>", lambda e: self.abrir_admin())
+        self.janela_admin = None
 
-        self.login = tk.Frame(self.admin, bg=CORES["cartao"])
-        self.texto(self.login, "Senha do administrador", "peq", "suave")
-        linha = self.linha(self.login)
-        self.ent_senha = ttk.Entry(linha, show="•", width=20)
-        self.ent_senha.pack(side="left", fill="x", expand=True)
-        self.ent_senha.bind("<Return>", lambda e: self.entrar())
-        ttk.Button(linha, text="Entrar", command=self.entrar).pack(side="left", padx=(8, 0))
-        self.lbl_login = self.texto(self.login, fonte="peq", cor="vermelho", pady=(4, 0))
+    def admin_aberto(self):
+        return self.janela_admin is not None and self.janela_admin.winfo_exists()
 
-        o = self.opcoes = tk.Frame(self.admin, bg=CORES["cartao"])
-        topo = self.linha(o)
-        self.texto(topo, "Administrador", "neg", side="left")
-        ttk.Button(topo, text="Sair", command=self.travar_admin).pack(side="right")
+    def nova_janela_admin(self):
+        j = self.janela_admin = self.janela("Administrador")
+        j.protocol("WM_DELETE_WINDOW", self.travar_admin)
+        return j
 
+    def abrir_admin(self):
+        if self.admin_aberto():
+            return self.janela_admin.lift()
+        j = self.nova_janela_admin()
+        self.texto(j, "Senha do administrador", "peq", "suave", pady=(10, 2))
+        linha = self.linha(j)
+        campo = ttk.Entry(linha, show="•", width=22)
+        campo.pack(side="left", fill="x", expand=True)
+        msg = self.texto(j, fonte="peq", cor="vermelho", pady=(4, 0))
+
+        def entrar(_=None):
+            senha = campo.get()
+            campo.delete(0, "end")
+            if not senha:
+                return msg.config(text="Digite a senha.")
+            try:
+                dados = self.servico.enviar("/login", {"senha": senha})
+            except ErroAPI as e:
+                return msg.config(text=str(e))
+            self.senha_admin = senha
+            j.destroy()
+            self.montar_opcoes(dados)
+
+        campo.bind("<Return>", entrar)
+        ttk.Button(linha, text="Entrar", command=entrar).pack(side="left", padx=(8, 0))
+        self.centralizar(j)
+        campo.focus_set()
+
+    def montar_opcoes(self, dados):
+        o = self.nova_janela_admin()
         self.secao(o, "Controle de impressão")
         self.lbl_estado = self.texto(o, fonte="peq")
         self.btn_controle = ttk.Button(o, text="Desativar controle", command=self.alternar_controle)
@@ -357,48 +394,27 @@ class Painel:
                    command=lambda: self.salvar_usuario(usar_padrao=True)).pack(anchor="w", pady=(6, 0))
         self.lbl_proprios = self.texto(o, fonte="peq", cor="suave", pady=(6, 0))
         self.lbl_msg = self.texto(o, fonte="peq", pady=(6, 0))
+        self.lbl_msg.config(height=2)  # espaço reservado: a janela não precisa crescer
 
-    def abrir_admin(self):
-        self.admin_aberto = True
-        self.historico.pack_forget()
-        self.btn_admin.config(text="✕ Fechar administrador")
-        self.admin.pack(padx=14, pady=(0, 14), fill="x")
-        self.opcoes.pack_forget()
-        self.login.pack(fill="x")
-        self.lbl_login.config(text="")
-        self.ent_senha.focus_set()
+        tk.Frame(o, height=1, bg=CORES["borda"]).pack(fill="x", pady=(10, 8))
+        ttk.Button(o, text="Sair", command=self.travar_admin).pack(anchor="e")
+        self.mostrar_admin(dados)
+        self.renovar_trava()
+        self.centralizar(o)
 
     def travar_admin(self):
-        self.admin_aberto = False
         self.senha_admin = None
         if self.timer_trava:
             self.raiz.after_cancel(self.timer_trava)
             self.timer_trava = None
-        self.ent_senha.delete(0, "end")
-        self.lbl_msg.config(text="")
-        self.admin.pack_forget()
-        self.historico.pack(fill="x", padx=16, pady=(0, 4), after=self.cartao)
-        self.btn_admin.config(text="⚙ Administrador")
+        if self.admin_aberto():
+            self.janela_admin.destroy()
+        self.janela_admin = None
 
     def renovar_trava(self):
         if self.timer_trava:
             self.raiz.after_cancel(self.timer_trava)
         self.timer_trava = self.raiz.after(TRAVAR_ADMIN_MS, self.travar_admin)
-
-    def entrar(self):
-        senha = self.ent_senha.get()
-        self.ent_senha.delete(0, "end")
-        if not senha:
-            return self.lbl_login.config(text="Digite a senha.")
-        try:
-            dados = self.servico.enviar("/login", {"senha": senha})
-        except ErroAPI as e:
-            return self.lbl_login.config(text=str(e))
-        self.senha_admin = senha
-        self.login.pack_forget()
-        self.opcoes.pack(fill="x")
-        self.mostrar_admin(dados)
-        self.renovar_trava()
 
     def mostrar_admin(self, d):
         self.mostrar_estado(d)
