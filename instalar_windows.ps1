@@ -136,6 +136,17 @@ if ($pathMaq -notlike "*$destino*") {
     [Environment]::SetEnvironmentVariable("Path", "$pathMaq;$destino", "Machine")
 }
 
+# A senha do painel e criada aqui, por quem instala; o painel nunca oferece criar
+Write-Host ">> Senha do administrador do painel"
+Push-Location $destino
+& $py -c "from cotas import banco; exit(not banco.estado()['senha_definida'])"
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "   Ja existe uma senha (para trocar: cotas-admin senha)."
+} else {
+    do { & $py admin.py senha } until ($LASTEXITCODE -eq 0)
+}
+Pop-Location
+
 # Abre o painel agora, como o usuario comum (via explorer = sem privilegio de admin).
 Start-Sleep -Seconds 3
 Write-Host ">> Abrindo o painel..."
@@ -148,4 +159,4 @@ Write-Host "  Mudar o limite padrao:                         cotas-admin padrao 
 Write-Host "  Log do servico:  $dados\servico.log"
 Write-Host "O painel ja abriu nesta conta e vai abrir sozinho no login de todos os usuarios."
 Write-Host "Para abrir de novo: icone Cota de Impressao na Area de Trabalho."
-Write-Host "Na primeira abertura o painel pede para criar a senha do administrador."
+Write-Host "Cada usuario tem a sua propria cota. Trocar a senha: cotas-admin senha"

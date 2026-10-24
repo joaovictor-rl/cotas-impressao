@@ -22,6 +22,9 @@ class Erro(Exception):
 
 
 def conferir_senha(senha):
+    if not banco.estado()["senha_definida"]:
+        raise Erro(409, "A senha do administrador ainda não foi criada. "
+                        "Peça ao suporte para rodar: sudo cotas-admin senha")
     with _lock:
         espera = int(_tentativas["ate"] - time.time())
         if espera > 0:
@@ -39,14 +42,6 @@ def conferir_senha(senha):
 def dados_admin():
     return dict(banco.estado(), limite_padrao=config.carregar()["limite_diario_padrao"],
                 limites_proprios=banco.limites_proprios())
-
-
-def criar_senha(dados):
-    if len(dados.get("senha", "")) < 4:
-        raise Erro(400, "A senha precisa ter pelo menos 4 caracteres.")
-    if not banco.definir_senha(dados["senha"]):
-        raise Erro(409, "Já existe uma senha definida.")
-    return banco.estado()
 
 
 def mudar_controle(dados):
@@ -95,8 +90,6 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             tamanho = min(int(self.headers.get("Content-Length") or 0), 4096)
             dados = json.loads(self.rfile.read(tamanho) or b"{}")
-            if self.path == "/senha":
-                return self.responder(200, criar_senha(dados))
             if self.path not in ACOES_ADMIN:
                 raise Erro(404, "não encontrado")
             conferir_senha(str(dados.get("senha", "")))

@@ -91,11 +91,21 @@ cd $DESTINO && exec /usr/bin/python3 admin.py "\$@"
 EOF
 chmod 755 /usr/local/bin/cotas-admin
 
+# A senha do painel é criada aqui, por quem instala; o painel nunca oferece criar
+echo ">> Senha do administrador do painel"
+if (cd "$DESTINO" && python3 -c "from cotas import banco; exit(not banco.estado()['senha_definida'])"); then
+  echo "   Já existe uma senha (para trocar: sudo cotas-admin senha)."
+elif [ -t 0 ]; then
+  until cotas-admin senha; do echo "   Tente de novo."; done
+else
+  echo "   ATENÇÃO: nenhuma senha criada. Rode: sudo cotas-admin senha"
+fi
+
 echo
 echo "Pronto! Limite padrão: $(python3 -c "import json;print(json.load(open('/etc/cotas-impressao/config.json'))['limite_diario_padrao'])") folhas/dia."
 echo "  Ver saldos:        sudo cotas-admin listar"
 echo "  Mudar o padrão:    sudo cotas-admin padrao 20"
 echo "  Log do serviço:    journalctl -u cotas-impressao -f"
 echo "O painel abre no login; o ícone 'Cota de Impressão' aparece na Área de Trabalho"
-echo "de cada usuário. Na primeira abertura ele pede para criar a senha do administrador."
-echo "Esqueceu a senha?  sudo cotas-admin senha"
+echo "de cada usuário. Cada usuário tem a sua própria cota."
+echo "Trocar a senha do administrador:  sudo cotas-admin senha"

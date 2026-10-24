@@ -85,7 +85,6 @@ class Painel:
     def __init__(self, raiz, usuario, servico, trava):
         self.raiz, self.usuario, self.servico, self.trava = raiz, usuario, servico, trava
         self.ultimo_id = None
-        self.pediu_senha = False
         self.controle_ativo = True
         self.admin_aberto = False
         self.senha_admin = None
@@ -254,8 +253,6 @@ class Painel:
             self.mostrar_estado(dados)
             self.mostrar_problemas(dados["impressoras_com_problema"])
             self.verificar_bloqueios(dados["trabalhos"])
-            if not dados["senha_definida"] and not self.pediu_senha:
-                self.pedir_senha()
         self.raiz.after(3000, self.atualizar)
 
     def atualizar_agora(self):
@@ -308,45 +305,6 @@ class Painel:
         ttk.Button(a, text="Entendi", command=a.destroy).pack(anchor="e")
         a.bind("<Return>", lambda e: a.destroy())
         self.centralizar(a)
-
-    def pedir_senha(self):
-        self.pediu_senha = True
-        self.mostrar_janela()
-        j = self.janela("Criar senha do administrador")
-        self.texto(j, "Esta é a primeira vez que o programa é aberto. A senha será pedida "
-                      "para mudar o limite de folhas ou desativar o controle.",
-                   cor="suave", pady=(6, 12))
-        campos = []
-        for rotulo in ("Senha (mínimo 4 caracteres)", "Repita a senha"):
-            self.texto(j, rotulo, "peq")
-            campo = ttk.Entry(j, show="•", width=34)
-            campo.pack(fill="x", pady=(2, 8))
-            campos.append(campo)
-        msg = self.texto(j, fonte="peq", cor="vermelho", pady=(0, 10))
-
-        def salvar(_=None):
-            senha, repetida = campos[0].get(), campos[1].get()
-            if len(senha) < 4:
-                return msg.config(text="A senha precisa ter pelo menos 4 caracteres.")
-            if senha != repetida:
-                campos[1].delete(0, "end")
-                return msg.config(text="As duas senhas não são iguais.")
-            try:
-                self.mostrar_estado(self.servico.enviar("/senha", {"senha": senha}))
-            except ErroAPI as e:
-                return msg.config(text=str(e))
-            j.destroy()
-            messagebox.showinfo("Senha criada", "Guarde a senha em lugar seguro.\n\nPara mudar o "
-                                "limite ou desativar o controle, clique em \"⚙ Administrador\" "
-                                "no rodapé do painel.", parent=self.raiz)
-
-        botoes = self.linha(j)
-        ttk.Button(botoes, text="Salvar senha", command=salvar).pack(side="right")
-        ttk.Button(botoes, text="Depois", command=j.destroy).pack(side="right", padx=(0, 8))
-        campos[0].bind("<Return>", lambda e: campos[1].focus_set())
-        campos[1].bind("<Return>", salvar)
-        self.centralizar(j)
-        campos[0].focus_set()
 
     # ------------------------------------------------------------ administrador
     def montar_admin(self):
