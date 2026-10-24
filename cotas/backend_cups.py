@@ -51,8 +51,9 @@ def executar_original(uri, argv):
     if not os.path.isfile(programa):
         avisar("ERROR", f"Backend original não encontrado: {programa}")
         return FALHOU
-    # Backends que não precisam de root rodam como "lp", como o CUPS faria
-    if os.geteuid() == 0 and os.stat(programa).st_mode & 0o077:
+    # Regra do CUPS: o backend só roda sem root ("lp") se todos podem lê-lo E executá-lo.
+    # O "usb" (0744) precisa de root para acessar a porta USB.
+    if os.geteuid() == 0 and os.stat(programa).st_mode & 0o005 == 0o005:
         lp = pwd.getpwnam("lp")
         os.setgroups([])
         os.setgid(lp.pw_gid)
