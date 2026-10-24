@@ -67,7 +67,11 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
-systemctl enable --now cotas-impressao.service
+systemctl enable cotas-impressao.service
+# restart (e não só start): numa atualização, o serviço antigo continuaria rodando
+systemctl restart cotas-impressao.service
+# Fecha painéis abertos com a versão antiga; abrem de novo pelo ícone ou no próximo login
+pkill -f "$DESTINO/painel.py" 2>/dev/null || true
 
 echo ">> Painel: abrir no login de todos os usuários e no menu..."
 install -d /usr/share/applications /etc/xdg/autostart
