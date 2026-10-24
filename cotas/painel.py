@@ -92,6 +92,7 @@ class Painel:
         self.timer_trava = None
         self.limites = {}
         self.alerta = None
+        self.lista_atual = None
 
         raiz.title("Minha cota de impressão")
         raiz.configure(bg=CORES["fundo"])
@@ -193,6 +194,10 @@ class Painel:
         self.mostrar_lista(d["trabalhos"])
 
     def mostrar_lista(self, trabalhos):
+        # Só redesenha se algo mudou; redesenhar a cada 3 s faz a lista piscar
+        if trabalhos == self.lista_atual:
+            return
+        self.lista_atual = trabalhos
         for w in self.lista.winfo_children():
             w.destroy()
         if not trabalhos:
