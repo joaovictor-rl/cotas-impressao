@@ -1,1 +1,1 @@
-"""Controle de cotas de impressão por usuário (Windows e Linux)."""
+"""Controle de cotas de impressão por usuário (Linux/CUPS)."""

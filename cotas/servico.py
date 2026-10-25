@@ -24,9 +24,6 @@ def main():
         logging.info("Serviço já está rodando; esta cópia vai sair.")
         return
 
-    if config.WINDOWS:
-        from .monitor_windows import Monitor
-    else:
-        from .monitor_linux import Monitor
+    from .monitor_linux import Monitor
     logging.info("Serviço de cotas iniciado")
     Monitor().executar()

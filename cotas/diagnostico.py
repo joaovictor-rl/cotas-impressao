@@ -19,7 +19,7 @@ def problemas_impressoras(validade=15):
     with _lock:
         if time.time() - _cache["quando"] > validade:
             try:
-                _cache["problemas"] = _problemas_windows() if config.WINDOWS else _problemas_linux()
+                _cache["problemas"] = _problemas_linux()
             except Exception:
                 _cache["problemas"] = []
             _cache["quando"] = time.time()
@@ -71,37 +71,6 @@ def _problemas_linux():
     return problemas
 
 
-# ---------------------------------------------------------------- Windows
-
-CONFIRA = "Confira a impressora ou procure o suporte."
-PROBLEMAS_WINDOWS = {0x80: ("está desligada ou desconectada", DICA), 0x2: ("está com erro", CONFIRA),
-                     0x8: ("está com papel preso", CONFIRA), 0x10: ("está sem papel", CONFIRA),
-                     0x1000: ("não está disponível", DICA), 0x100000: ("precisa de atenção", CONFIRA)}
-JOB_COM_ERRO = 0x2 | 0x20 | 0x40 | 0x400  # erro, offline, sem papel, intervenção
-
-
-def _problemas_windows():
-    import win32print
-
-    ignoradas = {n.lower() for n in config.carregar()["impressoras_ignoradas"]}
-    problemas = []
-    for p in win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL, None, 2):
-        nome = p["pPrinterName"]
-        if nome.lower() in ignoradas:
-            continue
-        problema = next((t for bit, t in PROBLEMAS_WINDOWS.items() if p["Status"] & bit), None)
-        if not problema and p["cJobs"]:
-            h = win32print.OpenPrinter(nome)
-            try:
-                if any(j["Status"] & JOB_COM_ERRO for j in win32print.EnumJobs(h, 0, 999, 1)):
-                    problema = ("não está recebendo os documentos", DICA)
-            finally:
-                win32print.ClosePrinter(h)
-        if problema:
-            problemas.append(_problema(nome, *problema))
-    return problemas
-
-
 # ---------------------------------------------------------------- relatório completo
 
 def relatorio():
@@ -119,8 +88,7 @@ def relatorio():
     if not estado["senha_definida"]:
         itens.append(("aviso", "Senha do administrador ainda não foi criada (abra o painel)"))
 
-    if not config.WINDOWS:
-        itens += _relatorio_linux()
+    itens += _relatorio_linux()
 
     problemas = problemas_impressoras(validade=0)
     itens += [("erro", p["mensagem"]) for p in problemas]

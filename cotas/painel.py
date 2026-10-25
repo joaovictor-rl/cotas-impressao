@@ -1,5 +1,4 @@
 """Painel do usuário: folhas restantes hoje, aviso de bloqueio e área do administrador."""
-import ctypes
 import getpass
 import json
 import os
@@ -498,20 +497,14 @@ def registrar_erro():
 
 def main():
     try:
-        if config.WINDOWS:
-            try:
-                ctypes.windll.shcore.SetProcessDpiAwareness(1)
-            except (AttributeError, OSError):
-                pass
         usuario = getpass.getuser()
         trava = instancia_unica(usuario)
         if not trava:
             return
-        if not config.WINDOWS:
-            try:
-                criar_icone_linux()
-            except OSError:
-                pass
+        try:
+            criar_icone_linux()
+        except OSError:
+            pass
         raiz = tk.Tk()
         Painel(raiz, usuario, Servico(config.carregar()["porta_api"], usuario), trava)
         if "--minimizado" in sys.argv:

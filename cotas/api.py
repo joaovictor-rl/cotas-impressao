@@ -114,8 +114,6 @@ class _Handler(BaseHTTPRequestHandler):
 
 class _Servidor(ThreadingHTTPServer):
     daemon_threads = True
-    # No Windows, reaproveitar a porta deixaria rodar dois serviços ao mesmo tempo
-    allow_reuse_address = not config.WINDOWS
 
 
 def iniciar(porta):

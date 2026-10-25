@@ -1,16 +1,9 @@
 import json
 import os
-import sys
 from pathlib import Path
 
-WINDOWS = sys.platform.startswith("win")
-
-if WINDOWS:
-    _base = Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData")) / "CotasImpressao"
-    PASTA_CONFIG = PASTA_DADOS = _base
-else:
-    PASTA_CONFIG = Path("/etc/cotas-impressao")
-    PASTA_DADOS = Path("/var/lib/cotas-impressao")
+PASTA_CONFIG = Path("/etc/cotas-impressao")
+PASTA_DADOS = Path("/var/lib/cotas-impressao")
 
 # Permite rodar testes sem mexer no sistema
 PASTA_CONFIG = Path(os.environ.get("COTAS_CONFIG_DIR", PASTA_CONFIG))
@@ -22,9 +15,8 @@ ARQ_LOG = PASTA_DADOS / "servico.log"
 PADRAO = {
     "limite_diario_padrao": 10,
     "porta_api": 8631,
-    "usuarios_isentos": ["root", "administrador", "administrator"],
-    "impressoras_ignoradas": ["Microsoft Print to PDF", "Microsoft XPS Document Writer",
-                              "OneNote (Desktop)", "OneNote for Windows 10", "Fax", "PDF"],
+    "usuarios_isentos": ["root"],
+    "impressoras_ignoradas": ["PDF"],
     "paginas_desconhecidas": "contar_1",  # ou "bloquear" / "liberar"
 }
 
