@@ -9,6 +9,7 @@
   cotas-admin historico maria --dias 30
   cotas-admin relatorio 2026-10     consumo do mês (--csv arquivo.csv para a planilha)
   cotas-admin senha                 troca a senha do painel
+  cotas-admin rede ligar|desligar   relatórios pela rede (pede uma senha só para eles)
   cotas-admin ativar | desativar    liga/desliga o controle
   cotas-admin diagnostico           verifica serviço, impressoras e fila
 """
@@ -16,7 +17,9 @@ import argparse
 import datetime as dt
 import getpass
 import re
+import socket
 import sqlite3
+import subprocess
 import sys
 
 from . import banco, config, diagnostico, relatorio
@@ -102,6 +105,30 @@ def senha(a, cfg):
     print("Senha trocada.")
 
 
+def rede(a, cfg):
+    ligar = a.acao == "ligar"
+    if ligar:
+        nova = getpass.getpass("Senha para ver os relatórios (diferente da do painel): ")
+        if len(nova) < 4 or getpass.getpass("Repita a senha: ") != nova:
+            sys.exit("Senha inválida (mínimo 4 caracteres) ou as duas não conferem.")
+        if banco.conferir_senha(nova):
+            sys.exit("Use uma senha diferente da do administrador do painel.")
+        banco.definir_senha(nova, substituir=True, chave="senha_relatorio")
+    cfg["relatorio_rede"] = ligar
+    config.salvar(cfg)
+    subprocess.run(["systemctl", "restart", "cotas-impressao.service"], check=False)
+    if not ligar:
+        print("Relatórios pela rede desligados.")
+        return
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("10.255.255.255", 1))  # não envia nada: só descobre o IP da rede
+        ip = s.getsockname()[0]
+    except OSError:
+        ip = "IP-DESTE-PC"
+    print(f"Relatórios na rede: http://{ip}:{cfg['porta_relatorio']}/relatorio")
+
+
 def controle(ativo):
     def comando(a, cfg):
         banco.definir_controle(ativo)
@@ -142,6 +169,7 @@ def main(argv=None):
     comando("relatorio", mensal).add_argument("mes", nargs="?")
     sub.choices["relatorio"].add_argument("--csv")
     comando("senha", senha)
+    comando("rede", rede).add_argument("acao", choices=["ligar", "desligar"])
     comando("ativar", controle(True))
     comando("desativar", controle(False))
     comando("diagnostico", verificar)

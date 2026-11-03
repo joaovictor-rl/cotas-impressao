@@ -223,20 +223,21 @@ def _hash(senha, sal, iteracoes=ITERACOES):
     return hashlib.pbkdf2_hmac("sha256", senha.encode(), sal, iteracoes).hex()
 
 
-def definir_senha(senha, substituir=False):
+def definir_senha(senha, substituir=False, chave="senha"):
+    """chave="senha_relatorio": senha separada, que só dá acesso aos relatórios pela rede."""
     sal = os.urandom(16)
     valor = f"{ITERACOES}${sal.hex()}${_hash(senha, sal)}"
     with _lock, conectar() as c:
         c.execute("BEGIN IMMEDIATE")
-        if _get(c, "senha") and not substituir:
+        if _get(c, chave) and not substituir:
             return False
-        _set(c, "senha", valor)
+        _set(c, chave, valor)
         return True
 
 
-def conferir_senha(senha):
+def conferir_senha(senha, chave="senha"):
     with conectar() as c:
-        guardada = _get(c, "senha")
+        guardada = _get(c, chave)
     try:
         iteracoes, sal, esperado = guardada.split("$")[-3:]
         return hmac.compare_digest(_hash(senha, bytes.fromhex(sal), int(iteracoes)), esperado)

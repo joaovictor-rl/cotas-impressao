@@ -18,6 +18,8 @@ PADRAO = {
     "usuarios_isentos": ["root"],
     "impressoras_ignoradas": ["PDF"],
     "paginas_desconhecidas": "contar_1",  # ou "bloquear" / "liberar"
+    "relatorio_rede": False,  # liga com: sudo cotas-admin rede ligar
+    "porta_relatorio": 8632,
 }
 
 

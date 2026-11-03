@@ -2,7 +2,7 @@ import logging
 import logging.handlers
 import sys
 
-from . import api, banco, config
+from . import api, banco, config, relatorio
 
 
 def configurar_log():
@@ -23,6 +23,13 @@ def main():
     except OSError:
         logging.info("Serviço já está rodando; esta cópia vai sair.")
         return
+
+    cfg = config.carregar()
+    if cfg["relatorio_rede"]:
+        try:
+            relatorio.iniciar(cfg["porta_relatorio"])
+        except OSError as e:
+            logging.warning("Não consegui abrir a porta dos relatórios (%s)", e)
 
     from .monitor_linux import Monitor
     logging.info("Serviço de cotas iniciado")
