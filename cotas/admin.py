@@ -7,16 +7,19 @@
   cotas-admin devolver maria        devolve as folhas usadas hoje
   cotas-admin isentar professor     sem limite (desisentar para voltar)
   cotas-admin historico maria --dias 30
+  cotas-admin relatorio 2026-10     consumo do mês (--csv arquivo.csv para a planilha)
   cotas-admin senha                 troca a senha do painel
   cotas-admin ativar | desativar    liga/desliga o controle
   cotas-admin diagnostico           verifica serviço, impressoras e fila
 """
 import argparse
+import datetime as dt
 import getpass
+import re
 import sqlite3
 import sys
 
-from . import banco, config, diagnostico
+from . import banco, config, diagnostico, relatorio
 
 
 def tabela(cabecalho, linhas):
@@ -76,6 +79,21 @@ def historico(a, cfg):
              (h["titulo"] or "")[:40]) for h in banco.historico(a.usuario, a.dias)])
 
 
+def mensal(a, cfg):
+    mes = a.mes or dt.date.today().strftime("%Y-%m")
+    if not re.fullmatch(r"\d{4}-\d{2}", mes):
+        sys.exit("Mês no formato AAAA-MM, ex.: 2026-10")
+    if a.csv:
+        with open(a.csv, "w", encoding="utf-8", newline="") as f:
+            f.write(relatorio.csv_mes(mes))
+        print(f"Planilha salva em {a.csv}")
+        return
+    r = banco.relatorio(mes)
+    tabela(("usuário", "folhas", "impressões", "bloqueadas"),
+           [(u["usuario"], u["folhas"], u["impressoes"], u["bloqueios"]) for u in r["usuarios"]])
+    print(f"\nTotal: {sum(u['folhas'] for u in r['usuarios'])} folha(s) em {len(r['dias'])} dia(s).")
+
+
 def senha(a, cfg):
     nova = getpass.getpass("Nova senha do painel: ")
     if len(nova) < 4 or getpass.getpass("Repita a senha: ") != nova:
@@ -121,6 +139,8 @@ def main(argv=None):
     comando("desisentar", lambda a, c: isentar(a, c, False), "usuario")
     comando("historico", historico).add_argument("usuario", nargs="?")
     sub.choices["historico"].add_argument("--dias", type=int, default=7)
+    comando("relatorio", mensal).add_argument("mes", nargs="?")
+    sub.choices["relatorio"].add_argument("--csv")
     comando("senha", senha)
     comando("ativar", controle(True))
     comando("desativar", controle(False))

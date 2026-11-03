@@ -188,6 +188,34 @@ def historico(usuario=None, dias=7):
         return [dict(r) for r in c.execute(sql + " ORDER BY id DESC", args)]
 
 
+# ---------------------------------------------------------------- relatório do mês (AAAA-MM)
+
+def relatorio(mes):
+    filtro = "FROM trabalhos WHERE data LIKE ? || '-%'"
+    with conectar() as c:
+        usuarios = c.execute(
+            "SELECT usuario, SUM(CASE WHEN situacao='liberado' THEN folhas ELSE 0 END) AS folhas, "
+            "SUM(situacao='liberado') AS impressoes, SUM(situacao='bloqueado') AS bloqueios "
+            f"{filtro} GROUP BY usuario ORDER BY folhas DESC, usuario", (mes,))
+        dias = c.execute(f"SELECT data, SUM(folhas) AS folhas {filtro} AND situacao='liberado' "
+                         "GROUP BY data ORDER BY data", (mes,))
+        return {"mes": mes, "usuarios": [dict(r) for r in usuarios], "dias": [dict(r) for r in dias]}
+
+
+def trabalhos_mes(mes):
+    """Sem o título do documento: o relatório é de consumo, não do conteúdo impresso."""
+    with conectar() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT data, hora, usuario, impressora, folhas, situacao FROM trabalhos "
+            "WHERE data LIKE ? || '-%' ORDER BY id", (mes,))]
+
+
+def meses():
+    with conectar() as c:
+        return [r[0] for r in c.execute(
+            "SELECT DISTINCT substr(data, 1, 7) FROM trabalhos ORDER BY 1 DESC")]
+
+
 # ---------------------------------------------------------------- senha e liga/desliga
 # A senha não é guardada: só o hash PBKDF2 com um sal aleatório.
 
