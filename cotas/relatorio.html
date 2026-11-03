@@ -43,7 +43,7 @@
     </div>
     <div class="acoes">
       <select id="meses" aria-label="Mês"></select>
-      <a class="botao" id="csv">Baixar planilha (CSV)</a>
+      <a class="botao" id="planilha">Baixar planilha (Excel)</a>
     </div>
   </header>
 
@@ -72,7 +72,7 @@ const D = /*DADOS*/null;
 const soma = (a, i) => a.reduce((s, r) => s + r[i], 0);
 const fmt = n => n.toLocaleString("pt-BR");
 document.getElementById("mes").textContent = D.nome_mes;
-document.getElementById("csv").href = "relatorio.csv?mes=" + D.mes;
+document.getElementById("planilha").href = "relatorio.xlsx?mes=" + D.mes;
 const sel = document.getElementById("meses");
 sel.innerHTML = D.meses.map(([m, n]) => `<option value="${m}"${m === D.mes ? " selected" : ""}>${n}</option>`).join("");
 sel.onchange = () => location.search = "?mes=" + sel.value;

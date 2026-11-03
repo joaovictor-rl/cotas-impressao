@@ -24,11 +24,11 @@ done
 echo ">> Instalando dependências..."
 if command -v apt-get >/dev/null; then
   apt-get update -qq
-  apt-get install -y python3 python3-tk python3-cups poppler-utils ghostscript cups
+  apt-get install -y python3 python3-tk python3-cups python3-openpyxl poppler-utils ghostscript cups
 elif command -v dnf >/dev/null; then
-  dnf install -y python3 python3-tkinter python3-cups poppler-utils ghostscript cups
+  dnf install -y python3 python3-tkinter python3-cups python3-openpyxl poppler-utils ghostscript cups
 else
-  echo "Instale manualmente: python3, tkinter, pycups, poppler-utils, ghostscript"; exit 1
+  echo "Instale manualmente: python3, tkinter, pycups, openpyxl, poppler-utils, ghostscript"; exit 1
 fi
 
 echo ">> Copiando arquivos para $DESTINO..."

@@ -3,7 +3,6 @@
 A porta da rede só lê: não dá para mudar cotas nem desligar o controle por ela.
 """
 import base64
-import csv
 import datetime as dt
 import io
 import json
@@ -23,21 +22,61 @@ _erros = {}  # ip -> (erros seguidos, bloqueado até)
 _lock = threading.Lock()
 
 
-def csv_mes(mes):
-    """Planilha para o Excel em português: separador ";" e datas dd/mm/aaaa."""
-    saida = io.StringIO()
-    w = csv.writer(saida, delimiter=";")
-    w.writerow(["data", "hora", "usuario", "impressora", "folhas", "situacao"])
-    for t in banco.trabalhos_mes(mes):
-        a, m, d = t["data"].split("-")
-        w.writerow([f"{d}/{m}/{a}", t["hora"][:5], t["usuario"], t["impressora"],
-                    t["folhas"], t["situacao"]])
-    return "\ufeff" + saida.getvalue()  # BOM: o Excel reconhece os acentos
+def planilha_mes(mes):
+    """Arquivo .xlsx com duas abas: resumo por usuário e cada impressão do mês."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    cabecalho = (Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="2563EB"))
+    vermelho = Font(color="B91C1C")
+
+    def aba(ws, titulos, larguras, linhas, centralizar):
+        ws.append(titulos)
+        for celula in ws[1]:
+            celula.font, celula.fill = cabecalho
+        for linha in linhas:
+            ws.append(linha)
+        for coluna in ws.iter_cols(min_col=1, max_col=len(titulos)):
+            if coluna[0].column_letter in centralizar:
+                for celula in coluna:
+                    celula.alignment = Alignment(horizontal="center")
+        for letra, largura in zip("ABCDEF", larguras):
+            ws.column_dimensions[letra].width = largura
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = ws.dimensions
+
+    wb = Workbook()
+    r = banco.relatorio(mes)
+    resumo = wb.active
+    resumo.title = "Resumo"
+    aba(resumo, ["Usuário", "Folhas", "Impressões", "Bloqueadas"], [22, 10, 12, 12],
+        [[u["usuario"], u["folhas"], u["impressoes"], u["bloqueios"]] for u in r["usuarios"]], "BCD")
+    resumo.append(["Total"] + [sum(u[k] for u in r["usuarios"])
+                               for k in ("folhas", "impressoes", "bloqueios")])
+    for celula in resumo[resumo.max_row]:
+        celula.font = Font(bold=True)
+        if celula.column_letter != "A":
+            celula.alignment = Alignment(horizontal="center")
+
+    impressoes = wb.create_sheet("Impressões")
+    aba(impressoes, ["Data", "Hora", "Usuário", "Impressora", "Folhas", "Situação"],
+        [12, 8, 22, 22, 8, 12],
+        [[dt.date.fromisoformat(t["data"]), dt.time.fromisoformat(t["hora"]), t["usuario"],
+          t["impressora"], t["folhas"], t["situacao"]] for t in banco.trabalhos_mes(mes)], "ABE")
+    for data, hora, *_, situacao in impressoes.iter_rows(min_row=2):
+        data.number_format, hora.number_format = "DD/MM/YYYY", "HH:MM"
+        if situacao.value == "bloqueado":
+            situacao.font = vermelho
+
+    saida = io.BytesIO()
+    wb.save(saida)
+    return saida.getvalue()
 
 
 MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
          "agosto", "setembro", "outubro", "novembro", "dezembro"]
 MODELO = Path(__file__).with_name("relatorio.html")
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def nome_mes(mes):
@@ -103,15 +142,15 @@ class _Handler(BaseHTTPRequestHandler):
             return self.enviar(400, "text/plain", "Mês inválido (use AAAA-MM).")
         if url.path in ("/", "/relatorio"):
             self.enviar(200, "text/html", pagina_html(mes))
-        elif url.path == "/relatorio.csv":
-            self.enviar(200, "text/csv", csv_mes(mes), f"relatorio_{mes}.csv")
+        elif url.path == "/relatorio.xlsx":
+            self.enviar(200, XLSX, planilha_mes(mes), f"relatorio_{mes}.xlsx")
         else:
             self.enviar(404, "text/plain", "Não encontrado.")
 
-    def enviar(self, codigo, tipo, texto, arquivo=None):
-        corpo = texto.encode()
+    def enviar(self, codigo, tipo, conteudo, arquivo=None):
+        corpo = conteudo if isinstance(conteudo, bytes) else conteudo.encode()
         self.send_response(codigo)
-        self.send_header("Content-Type", f"{tipo}; charset=utf-8")
+        self.send_header("Content-Type", tipo if arquivo else f"{tipo}; charset=utf-8")
         self.send_header("Content-Length", str(len(corpo)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")

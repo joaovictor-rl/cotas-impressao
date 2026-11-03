@@ -7,7 +7,7 @@
   cotas-admin devolver maria        devolve as folhas usadas hoje
   cotas-admin isentar professor     sem limite (desisentar para voltar)
   cotas-admin historico maria --dias 30
-  cotas-admin relatorio 2026-10     consumo do mês (--csv arquivo.csv para a planilha)
+  cotas-admin relatorio 2026-10     consumo do mês (--planilha arquivo.xlsx para o Excel)
   cotas-admin senha                 troca a senha do painel
   cotas-admin rede ligar|desligar   relatórios pela rede (pede uma senha só para eles)
   cotas-admin ativar | desativar    liga/desliga o controle
@@ -86,10 +86,10 @@ def mensal(a, cfg):
     mes = a.mes or dt.date.today().strftime("%Y-%m")
     if not re.fullmatch(r"\d{4}-\d{2}", mes):
         sys.exit("Mês no formato AAAA-MM, ex.: 2026-10")
-    if a.csv:
-        with open(a.csv, "w", encoding="utf-8", newline="") as f:
-            f.write(relatorio.csv_mes(mes))
-        print(f"Planilha salva em {a.csv}")
+    if a.planilha:
+        with open(a.planilha, "wb") as f:
+            f.write(relatorio.planilha_mes(mes))
+        print(f"Planilha salva em {a.planilha}")
         return
     r = banco.relatorio(mes)
     tabela(("usuário", "folhas", "impressões", "bloqueadas"),
@@ -167,7 +167,7 @@ def main(argv=None):
     comando("historico", historico).add_argument("usuario", nargs="?")
     sub.choices["historico"].add_argument("--dias", type=int, default=7)
     comando("relatorio", mensal).add_argument("mes", nargs="?")
-    sub.choices["relatorio"].add_argument("--csv")
+    sub.choices["relatorio"].add_argument("--planilha")
     comando("senha", senha)
     comando("rede", rede).add_argument("acao", choices=["ligar", "desligar"])
     comando("ativar", controle(True))
