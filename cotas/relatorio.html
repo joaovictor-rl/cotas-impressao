@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relatório de impressão</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root { --fundo:#f6f7f9; --cartao:#fff; --texto:#1f2937; --suave:#6b7280; --borda:#e5e7eb;
+          --azul:#2563eb; --vermelho:#b91c1c; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 system-ui, "Segoe UI", Ubuntu, sans-serif; background:var(--fundo); color:var(--texto); }
+  main { max-width:1000px; margin:0 auto; padding:24px 16px 48px; }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:end; justify-content:space-between; margin-bottom:20px; }
+  h1 { font-size:22px; margin:0; }
+  .sub { color:var(--suave); font-size:14px; }
+  .acoes { display:flex; gap:8px; }
+  select, a.botao { font:inherit; padding:8px 12px; border-radius:8px; border:1px solid var(--borda); background:var(--cartao); color:var(--texto); }
+  a.botao { background:var(--azul); border-color:var(--azul); color:#fff; text-decoration:none; font-weight:600; }
+  .vazio { color:var(--suave); text-align:center; padding:24px; }
+  .numeros { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:12px; margin-bottom:16px; }
+  .cartao { background:var(--cartao); border:1px solid var(--borda); border-radius:12px; padding:16px; }
+  .numero { font-size:28px; font-weight:700; }
+  .rotulo { color:var(--suave); font-size:13px; }
+  .graficos { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px; }
+  @media (max-width:760px) { .graficos { grid-template-columns:1fr; } }
+  h2 { font-size:15px; margin:0 0 12px; }
+  .area { position:relative; height:260px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:right; padding:8px 10px; border-bottom:1px solid var(--borda); }
+  th:first-child, td:first-child { text-align:left; }
+  th { color:var(--suave); font-weight:600; font-size:13px; }
+  td.bloq { color:var(--vermelho); }
+  .tabela { overflow-x:auto; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Relatório de impressão</h1>
+      <div class="sub">Reprografia — Escola de Música da UFPA · <span id="mes"></span></div>
+    </div>
+    <div class="acoes">
+      <select id="meses" aria-label="Mês"></select>
+      <a class="botao" id="csv">Baixar planilha (CSV)</a>
+    </div>
+  </header>
+
+  <section class="numeros">
+    <div class="cartao"><div class="numero" id="n-folhas"></div><div class="rotulo">folhas impressas</div></div>
+    <div class="cartao"><div class="numero" id="n-impressoes"></div><div class="rotulo">impressões</div></div>
+    <div class="cartao"><div class="numero" id="n-media"></div><div class="rotulo">folhas por dia com impressão (média)</div></div>
+    <div class="cartao"><div class="numero" id="n-bloqueios"></div><div class="rotulo">impressões bloqueadas pela cota</div></div>
+  </section>
+
+  <section class="graficos">
+    <div class="cartao"><h2>Folhas por usuário</h2><div class="area"><canvas id="g-usuarios"></canvas></div></div>
+    <div class="cartao"><h2>Folhas por dia</h2><div class="area"><canvas id="g-dias"></canvas></div></div>
+  </section>
+
+  <section class="cartao">
+    <h2>Resumo por usuário</h2>
+    <div class="tabela"><table>
+      <thead><tr><th>Usuário</th><th>Folhas</th><th>Impressões</th><th>Bloqueadas</th><th>Limite diário</th></tr></thead>
+      <tbody id="linhas"></tbody>
+    </table></div>
+  </section>
+</main>
+<script>
+const D = /*DADOS*/null;
+const soma = (a, i) => a.reduce((s, r) => s + r[i], 0);
+const fmt = n => n.toLocaleString("pt-BR");
+document.getElementById("mes").textContent = D.nome_mes;
+document.getElementById("csv").href = "relatorio.csv?mes=" + D.mes;
+const sel = document.getElementById("meses");
+sel.innerHTML = D.meses.map(([m, n]) => `<option value="${m}"${m === D.mes ? " selected" : ""}>${n}</option>`).join("");
+sel.onchange = () => location.search = "?mes=" + sel.value;
+const esc = t => String(t).replace(/[&<>"']/g, c => "&#" + c.charCodeAt(0) + ";");
+const ativos = D.dias.filter(r => r[1] > 0).length;
+document.getElementById("n-folhas").textContent = fmt(soma(D.usuarios, 1));
+document.getElementById("n-impressoes").textContent = fmt(soma(D.usuarios, 2));
+document.getElementById("n-bloqueios").textContent = fmt(soma(D.usuarios, 3));
+document.getElementById("n-media").textContent = (ativos ? soma(D.usuarios, 1) / ativos : 0).toLocaleString("pt-BR", {maximumFractionDigits: 1});
+document.getElementById("linhas").innerHTML = D.usuarios.length ? D.usuarios.map(([u, f, i, b, l]) =>
+  `<tr><td>${esc(u)}</td><td>${f}</td><td>${i}</td><td class="${b ? "bloq" : ""}">${b}</td><td>${l}</td></tr>`).join("")
+  : `<tr><td colspan="5" class="vazio">Nenhuma impressão neste mês.</td></tr>`;
+if (window.Chart) {
+
+Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+Chart.defaults.color = "#6b7280";
+Chart.defaults.animation = false;
+const base = { maintainAspectRatio: false, plugins: { legend: { display: false } } };
+new Chart(document.getElementById("g-usuarios"), {
+  type: "bar",
+  data: { labels: D.usuarios.map(r => r[0]), datasets: [{ data: D.usuarios.map(r => r[1]), backgroundColor: "#2563eb", borderRadius: 4 }] },
+  options: { ...base, indexAxis: "y", scales: { x: { grid: { color: "#eef0f3" } }, y: { grid: { display: false } } } }
+});
+new Chart(document.getElementById("g-dias"), {
+  type: "bar",
+  data: { labels: D.dias.map(r => r[0]), datasets: [{ data: D.dias.map(r => r[1]), backgroundColor: "#2563eb", borderRadius: 3 }] },
+  options: { ...base, scales: { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
+                               y: { grid: { color: "#eef0f3" } } } }
+});
+}
+</script>
+</body>
+</html>

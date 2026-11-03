@@ -5,16 +5,17 @@ A porta da rede só lê: não dá para mudar cotas nem desligar o controle por e
 import base64
 import csv
 import datetime as dt
-import html
 import io
+import json
 import logging
 import re
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import banco
+from . import banco, config
 
 log = logging.getLogger("cotas.relatorio")
 MAX_ERROS, ESPERA = 5, 60
@@ -34,15 +35,41 @@ def csv_mes(mes):
     return "\ufeff" + saida.getvalue()  # BOM: o Excel reconhece os acentos
 
 
-def pagina_html(r):
-    linhas = "".join(f"<tr><td>{html.escape(u['usuario'])}</td><td>{u['folhas']}</td>"
-                     f"<td>{u['impressoes']}</td><td>{u['bloqueios']}</td></tr>"
-                     for u in r["usuarios"])
-    return (f"<!doctype html><meta charset=utf-8><title>Relatório {r['mes']}</title>"
-            f"<h1>Relatório de impressão · {r['mes']}</h1>"
-            f"<p><a href='relatorio.csv?mes={r['mes']}'>Baixar planilha (CSV)</a></p>"
-            "<table border=1 cellpadding=6><tr><th>Usuário</th><th>Folhas</th>"
-            f"<th>Impressões</th><th>Bloqueadas</th></tr>{linhas}</table>")
+MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
+         "agosto", "setembro", "outubro", "novembro", "dezembro"]
+MODELO = Path(__file__).with_name("relatorio.html")
+
+
+def nome_mes(mes):
+    ano, m = mes.split("-")
+    return f"{MESES[int(m) - 1].capitalize()} de {ano}"
+
+
+def pagina_html(mes):
+    r = banco.relatorio(mes)
+    cfg = config.carregar()
+    proprios = banco.limites_proprios()
+    isentos = {banco.normalizar(u) for u in cfg["usuarios_isentos"]}
+
+    ano, m = map(int, mes.split("-"))
+    folhas_dia = {d["data"]: d["folhas"] for d in r["dias"]}
+    dia, dias = dt.date(ano, m, 1), []
+    while dia.month == m and dia <= dt.date.today():
+        dias.append([dia.strftime("%d/%m"), folhas_dia.get(dia.isoformat(), 0)])
+        dia += dt.timedelta(days=1)
+
+    meses = sorted(set(banco.meses()) | {mes, dt.date.today().strftime("%Y-%m")}, reverse=True)
+    dados = {
+        "mes": mes, "nome_mes": nome_mes(mes), "dias": dias,
+        "meses": [[x, nome_mes(x)] for x in meses],
+        "usuarios": [[u["usuario"], u["folhas"], u["impressoes"], u["bloqueios"],
+                      "isento" if u["usuario"] in isentos
+                      else proprios.get(u["usuario"], cfg["limite_diario_padrao"])]
+                     for u in r["usuarios"]],
+    }
+    # "</" escapado: um nome de usuário não consegue fechar a tag <script>
+    return MODELO.read_text(encoding="utf-8").replace(
+        "/*DADOS*/null", json.dumps(dados, ensure_ascii=False).replace("</", "<\\/"))
 
 
 def _senha_ok(ip, cabecalho):
@@ -75,7 +102,7 @@ class _Handler(BaseHTTPRequestHandler):
         if not re.fullmatch(r"\d{4}-\d{2}", mes):
             return self.enviar(400, "text/plain", "Mês inválido (use AAAA-MM).")
         if url.path in ("/", "/relatorio"):
-            self.enviar(200, "text/html", pagina_html(banco.relatorio(mes)))
+            self.enviar(200, "text/html", pagina_html(mes))
         elif url.path == "/relatorio.csv":
             self.enviar(200, "text/csv", csv_mes(mes), f"relatorio_{mes}.csv")
         else:
