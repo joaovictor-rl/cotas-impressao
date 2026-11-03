@@ -62,7 +62,9 @@ def _problemas_linux():
         if uri.startswith("usb://"):
             usb = _usb_conectados() if usb is None else usb
             if _id_usb(uri) not in usb:
-                problemas.append(_problema(nome, "não está conectada a este computador"))
+                problemas.append(_problema(nome, "não está conectada a este computador",
+                                           DICA + " Os documentos aguardam na fila e só "
+                                           "descontam da cota quando forem impressos."))
                 continue
         if info.get("printer-state") == 5:
             problemas.append(_problema(nome, "está parada", "Procure o suporte para reativá-la."))

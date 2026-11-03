@@ -8,10 +8,11 @@ import glob
 import os
 import pwd
 import shlex
+import subprocess
 import sys
 
 PREFIXO = "cotas:/"
-OK, FALHOU, CANCELAR = 0, 1, 5  # códigos de saída de backend do CUPS
+OK, FALHOU, CANCELAR, TENTAR_DEPOIS = 0, 1, 5, 6  # códigos de saída de backend do CUPS
 
 
 def avisar(nivel, texto):
@@ -45,9 +46,27 @@ def calcular_folhas(jid, copias, opcoes, arquivo=None):
     return contador.folhas(paginas, copias, por_folha, frente_verso)
 
 
+def caminho_backend(uri):
+    return os.path.join(os.environ.get("CUPS_SERVERBIN", "/usr/lib/cups"),
+                        "backend", uri.split(":", 1)[0])
+
+
+def usb_desconectada(uri):
+    """True só quando dá para ter certeza de que a impressora USB não está ligada."""
+    if not uri.startswith("usb://"):
+        return False
+    from .diagnostico import _id_usb
+    try:
+        saida = subprocess.run([caminho_backend(uri)], capture_output=True,
+                               text=True, timeout=30).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    conectadas = {_id_usb(linha.split()[1]) for linha in saida.splitlines() if " usb://" in linha}
+    return _id_usb(uri) not in conectadas
+
+
 def executar_original(uri, argv):
-    programa = os.path.join(os.environ.get("CUPS_SERVERBIN", "/usr/lib/cups"),
-                            "backend", uri.split(":", 1)[0])
+    programa = caminho_backend(uri)
     if not os.path.isfile(programa):
         avisar("ERROR", f"Backend original não encontrado: {programa}")
         return FALHOU
@@ -74,6 +93,11 @@ def main(argv):
         avisar("ERROR", f"Endereço inválido: {uri!r}")
         return FALHOU
     original = uri[len(PREFIXO):]
+
+    # Sem impressora, o documento espera na fila e só desconta quando imprimir
+    if usb_desconectada(original):
+        avisar("INFO", "Impressora desligada ou desconectada; o documento vai aguardar.")
+        return TENTAR_DEPOIS
 
     try:
         from . import banco, config
