@@ -8,7 +8,6 @@ import glob
 import os
 import pwd
 import shlex
-import subprocess
 import sys
 
 PREFIXO = "cotas:/"
@@ -53,16 +52,8 @@ def caminho_backend(uri):
 
 def usb_desconectada(uri):
     """True só quando dá para ter certeza de que a impressora USB não está ligada."""
-    if not uri.startswith("usb://"):
-        return False
-    from .diagnostico import _id_usb
-    try:
-        saida = subprocess.run([caminho_backend(uri)], capture_output=True,
-                               text=True, timeout=30).stdout
-    except (OSError, subprocess.SubprocessError):
-        return False
-    conectadas = {_id_usb(linha.split()[1]) for linha in saida.splitlines() if " usb://" in linha}
-    return _id_usb(uri) not in conectadas
+    from .diagnostico import usb_conectada
+    return uri.startswith("usb://") and usb_conectada(uri) is False
 
 
 def executar_original(uri, argv):

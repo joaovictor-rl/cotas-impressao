@@ -1,9 +1,9 @@
 """Verifica se as impressoras estão respondendo. Usado pelo painel e pelo `cotas-admin diagnostico`."""
 import os
 import socket
-import subprocess
 import threading
 import time
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import banco, config
@@ -32,15 +32,23 @@ def _problema(nome, texto, dica=DICA):
 
 # ---------------------------------------------------------------- Linux (CUPS)
 
-def _id_usb(uri):
+def usb_conectada(uri):
+    """Procura o número de série da impressora em /sys, sem tocar no aparelho.
+
+    Não usar "lpinfo" aqui: a busca do CUPS desconecta o driver USB da impressora
+    e, repetida a cada poucos segundos, reinicia a porta USB no meio da impressão.
+    Devolve None quando o endereço não tem número de série (não dá para saber).
+    """
     serial = parse_qs(urlparse(uri).query).get("serial")
-    return serial[0] if serial else uri.split("?")[0]
-
-
-def _usb_conectados():
-    saida = subprocess.run(["lpinfo", "--include-schemes", "usb", "-v"],
-                           capture_output=True, text=True, timeout=30).stdout
-    return {_id_usb(linha.split()[1]) for linha in saida.splitlines() if " usb://" in linha}
+    if not serial:
+        return None
+    for arquivo in Path("/sys/bus/usb/devices").glob("*/serial"):
+        try:
+            if arquivo.read_text().strip() == serial[0]:
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def _problemas_linux():
@@ -55,13 +63,11 @@ def _problemas_linux():
         if agora - job.get("time-at-creation", agora) > ESPERA_MAXIMA:
             esperando.add(job.get("job-printer-uri", "").rsplit("/", 1)[-1])
 
-    usb = None
     problemas = []
     for nome, info in conn.getPrinters().items():
         uri = info.get("device-uri", "").removeprefix(PREFIXO)
         if uri.startswith("usb://"):
-            usb = _usb_conectados() if usb is None else usb
-            if _id_usb(uri) not in usb:
+            if usb_conectada(uri) is False:
                 problemas.append(_problema(nome, "não está conectada a este computador",
                                            DICA + " Os documentos aguardam na fila e só "
                                            "descontam da cota quando forem impressos."))
