@@ -9,13 +9,14 @@
   :root { --fundo:#f6f7f9; --cartao:#fff; --texto:#1f2937; --suave:#6b7280; --borda:#e5e7eb;
           --azul:#2563eb; --vermelho:#b91c1c; }
   * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
   body { margin:0; font:15px/1.5 system-ui, "Segoe UI", Ubuntu, sans-serif; background:var(--fundo); color:var(--texto); }
   main { max-width:1000px; margin:0 auto; padding:24px 16px 48px; }
   header { display:flex; flex-wrap:wrap; gap:12px; align-items:end; justify-content:space-between; margin-bottom:20px; }
   h1 { font-size:22px; margin:0; }
   .sub { color:var(--suave); font-size:14px; }
   .acoes { display:flex; gap:8px; }
-  select, a.botao { font:inherit; padding:8px 12px; border-radius:8px; border:1px solid var(--borda); background:var(--cartao); color:var(--texto); }
+  select, input, button, a.botao { font:inherit; padding:8px 12px; border-radius:8px; border:1px solid var(--borda); background:var(--cartao); color:var(--texto); }
   a.botao { background:var(--azul); border-color:var(--azul); color:#fff; text-decoration:none; font-weight:600; }
   .vazio { color:var(--suave); text-align:center; padding:24px; }
   .numeros { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:12px; margin-bottom:16px; }
@@ -32,6 +33,18 @@
   th { color:var(--suave); font-weight:600; font-size:13px; }
   td.bloq { color:var(--vermelho); }
   .tabela { overflow-x:auto; }
+  #admin { margin-top:16px; }
+  #admin th, #admin td { text-align:left; }
+  .situacao { color:var(--suave); font-size:14px; margin:-4px 0 12px; }
+  .formulario { display:flex; flex-wrap:wrap; gap:8px; align-items:end; margin-bottom:8px; }
+  .formulario label { display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--suave); }
+  .formulario input { width:150px; }
+  button { background:var(--azul); border-color:var(--azul); color:#fff; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.6; cursor:default; }
+  #msg { min-height:22px; font-size:14px; margin:0 0 12px; }
+  #msg.erro { color:var(--vermelho); }
+  .pendente { color:#b45309; }
+  td button { padding:2px 8px; font-size:13px; font-weight:500; background:none; color:var(--azul); border:none; }
 </style>
 </head>
 <body>
@@ -66,6 +79,34 @@
       <tbody id="linhas"></tbody>
     </table></div>
   </section>
+
+  <section class="cartao" id="admin" hidden>
+    <h2>Administrar cotas</h2>
+    <p class="situacao" id="situacao"></p>
+    <form class="formulario" id="form">
+      <label>O que fazer
+        <select id="acao">
+          <option value="limite">Limite de um usuário</option>
+          <option value="extra">Folhas extras só hoje</option>
+          <option value="remover_limite">Voltar usuário ao padrão</option>
+          <option value="padrao">Limite padrão de todos</option>
+          <option value="desativar">Desativar o controle</option>
+          <option value="reativar">Reativar o controle</option>
+        </select>
+      </label>
+      <label id="c-usuario">Usuário <input id="usuario" list="conhecidos" autocomplete="off" required></label>
+      <label id="c-valor">Folhas <input id="valor" type="number" min="0" max="1000" required></label>
+      <label>Senha do administrador <input id="senha" type="password" required></label>
+      <button id="enviar">Enviar alteração</button>
+    </form>
+    <p id="msg"></p>
+    <datalist id="conhecidos"></datalist>
+    <h2>Últimas alterações</h2>
+    <div class="tabela"><table>
+      <thead><tr><th>Pedida em</th><th>Alteração</th><th>De onde</th><th>Situação</th></tr></thead>
+      <tbody id="historico"></tbody>
+    </table></div>
+  </section>
 </main>
 <script>
 const D = /*DADOS*/null;
@@ -85,6 +126,61 @@ document.getElementById("n-media").textContent = (ativos ? soma(D.usuarios, 1) /
 document.getElementById("linhas").innerHTML = D.usuarios.length ? D.usuarios.map(([u, f, i, b, l]) =>
   `<tr><td>${esc(u)}</td><td>${f}</td><td>${i}</td><td class="${b ? "bloq" : ""}">${b}</td><td>${l}</td></tr>`).join("")
   : `<tr><td colspan="5" class="vazio">Nenhuma impressão neste mês.</td></tr>`;
+if (D.admin) {
+  const $ = id => document.getElementById(id);
+  $("admin").hidden = false;
+  $("situacao").textContent = `Limite padrão: ${D.padrao} folhas por dia · Controle: ` +
+    (D.controle ? "ativo" : "DESATIVADO (impressões sem desconto)");
+  $("conhecidos").innerHTML = D.admin.conhecidos.map(u => `<option value="${esc(u)}">`).join("");
+  const descrever = a => ({
+    limite: `limite de ${a.usuario}: ${a.valor} folhas`, extra: `+${a.valor} folhas hoje para ${a.usuario}`,
+    remover_limite: `${a.usuario} volta ao padrão`, padrao: `limite padrão: ${a.valor} folhas`,
+    controle: a.valor ? "reativar o controle" : "desativar o controle" }[a.acao]);
+  $("historico").innerHTML = D.admin.alteracoes.length ? D.admin.alteracoes.map(a =>
+    `<tr><td>${esc(a.pedida_em)}</td><td>${esc(descrever(a))}</td><td>${esc(a.ip || "")}</td>` +
+    (a.aplicada_em ? `<td>aplicada ${esc(a.aplicada_em)}</td>` : `<td class="pendente">aguardando o PC</td>`) +
+    "</tr>").join("") : `<tr><td colspan="4" class="vazio">Nenhuma alteração feita pelo site.</td></tr>`;
+
+  const campos = () => {
+    const a = $("acao").value;
+    $("c-usuario").hidden = !["limite", "extra", "remover_limite"].includes(a);
+    $("c-valor").hidden = !["limite", "extra", "padrao"].includes(a);
+    $("usuario").required = !$("c-usuario").hidden;
+    $("valor").required = !$("c-valor").hidden;
+  };
+  $("acao").onchange = campos;
+  campos();
+
+  // "Alterar" na tabela de usuários preenche o formulário
+  document.querySelectorAll("#linhas tr").forEach((tr, i) => {
+    if (!D.usuarios[i]) return;
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = "alterar";
+    b.onclick = () => { $("acao").value = "limite"; campos(); $("usuario").value = D.usuarios[i][0];
+                        $("admin").scrollIntoView({behavior: "smooth"}); $("valor").focus(); };
+    tr.lastElementChild.append(" ", b);
+  });
+
+  $("form").onsubmit = async ev => {
+    ev.preventDefault();
+    let acao = $("acao").value, valor = Number($("valor").value);
+    if (acao === "desativar" || acao === "reativar") { valor = acao === "reativar" ? 1 : 0; acao = "controle"; }
+    if (acao === "controle" && !valor && !confirm("Desativar o controle? Todos vão imprimir sem desconto.")) return;
+    $("enviar").disabled = true;
+    $("msg").className = ""; $("msg").textContent = "Enviando...";
+    try {
+      const r = await fetch("alterar", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acao, usuario: $("usuario").value.trim(), valor, senha: $("senha").value }) });
+      const texto = await r.text();
+      $("msg").className = r.ok ? "" : "erro";
+      $("msg").textContent = texto;
+      if (r.ok) setTimeout(() => location.reload(), 1500);
+    } catch (e) {
+      $("msg").className = "erro"; $("msg").textContent = "Sem resposta do servidor.";
+    } finally { $("enviar").disabled = false; }
+  };
+}
+
 if (window.Chart) {
 
 Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;

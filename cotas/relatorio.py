@@ -110,7 +110,12 @@ def pagina_html(mes):
                       "isento" if u["usuario"] in isentos
                       else proprios.get(u["usuario"], padrao)]
                      for u in r["usuarios"]],
+        "padrao": padrao,
+        "controle": remotos.get("controle", True) if remotos else banco.estado()["controle_ativo"],
     }
+    if banco.ler_estado("chave_central"):  # só o servidor central altera cotas pelo site
+        dados["admin"] = {"conhecidos": sorted(set(banco.usuarios_conhecidos()) | set(proprios)),
+                          "alteracoes": banco.alteracoes_recentes()}
     # "</" escapado: um nome de usuário não consegue fechar a tag <script>
     return MODELO.read_text(encoding="utf-8").replace(
         "/*DADOS*/null", json.dumps(dados, ensure_ascii=False).replace("</", "<\\/"))

@@ -81,6 +81,10 @@ if ! env $AMBIENTE python3 -c "from cotas import banco, config; config.garantir_
   echo ">> Crie a senha da página de relatórios:"
   until cotas-servidor senha; do echo "   Tente de novo."; done
 fi
+if ! env $AMBIENTE python3 -c "from cotas import banco; exit(0 if banco.ler_estado('senha_admin_central') else 1)"; then
+  echo ">> Crie a senha do administrador (para alterar cotas pelo site; diferente da anterior):"
+  until cotas-servidor admin; do echo "   Tente de novo."; done
+fi
 if ! env $AMBIENTE python3 -c "from cotas import banco; exit(0 if banco.ler_estado('chave_central') else 1)"; then
   echo
   cotas-servidor chave

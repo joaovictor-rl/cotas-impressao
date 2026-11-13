@@ -61,7 +61,8 @@ def enviar_pendentes(servidor, forcar=False):
             "origem": socket.gethostname(),
             "registros": registros,
             "limites": {"padrao": cfg["limite_diario_padrao"], "isentos": cfg["usuarios_isentos"],
-                        "proprios": banco.limites_proprios()},
+                        "proprios": banco.limites_proprios(),
+                        "controle": banco.estado()["controle_ativo"]},
         }).encode()
         _pedido(servidor, "/registros", corpo)
         if not registros:
