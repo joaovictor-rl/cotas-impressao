@@ -146,7 +146,7 @@ def servidor(a, cfg):
     novo = {"url": url, "chave": a.chave}
     banco.gravar_estado("enviado_ate", -1)  # servidor novo recebe o histórico inteiro
     try:
-        n = envio.enviar_pendentes(novo)
+        n = envio.enviar_pendentes(novo, forcar=True)
     except Exception as e:
         sys.exit(f"Não consegui enviar para {url}: {e}\nConfira o IP, a chave e se o servidor está ligado.")
     envio.salvar(url, a.chave)

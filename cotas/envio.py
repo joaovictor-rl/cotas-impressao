@@ -1,7 +1,9 @@
-"""Envia ao servidor central os registros de impressão novos ou alterados.
+"""Conversa com o servidor central a cada minuto.
 
-As cotas continuam sendo decididas neste PC: se o servidor ou a rede cair,
-nada para; os registros esperam e vão no envio seguinte.
+Envia os registros de impressão novos ou alterados e busca as alterações de cota
+pedidas pelo site do servidor. É sempre este PC que se conecta (nenhuma porta aberta
+aqui), e as cotas continuam sendo decididas neste PC: se o servidor ou a rede cair,
+nada para; tudo espera a próxima conversa.
 """
 import json
 import logging
@@ -33,29 +35,71 @@ def salvar(url, chave):
         json.dump({"url": url, "chave": chave}, f)
 
 
-def enviar_pendentes(servidor):
-    """Envia tudo o que falta, em lotes. Devolve quantos registros foram enviados."""
-    cfg = config.carregar()
+def _pedido(servidor, caminho, corpo=None):
+    pedido = urllib.request.Request(
+        servidor["url"].rstrip("/") + caminho, data=corpo, method="POST" if corpo else "GET",
+        headers={"Content-Type": "application/json",
+                 "Authorization": "Bearer " + servidor["chave"]})
+    with urllib.request.urlopen(pedido, timeout=20) as resposta:
+        return resposta.read()
+
+
+def enviar_pendentes(servidor, forcar=False):
+    """Envia tudo o que falta, em lotes. Devolve quantos registros foram enviados.
+
+    forcar=True manda pelo menos uma vez (mesmo vazio) para atualizar os limites no servidor.
+    """
     enviados = 0
     while True:
+        cfg = config.carregar()
         desde = int(banco.ler_estado("enviado_ate", -1))
         registros = banco.pendentes(desde)
-        if not registros:
+        if not registros and not forcar:
             return enviados
+        forcar = False
         corpo = json.dumps({
             "origem": socket.gethostname(),
             "registros": registros,
             "limites": {"padrao": cfg["limite_diario_padrao"], "isentos": cfg["usuarios_isentos"],
                         "proprios": banco.limites_proprios()},
         }).encode()
-        pedido = urllib.request.Request(
-            servidor["url"].rstrip("/") + "/registros", data=corpo, method="POST",
-            headers={"Content-Type": "application/json",
-                     "Authorization": "Bearer " + servidor["chave"]})
-        with urllib.request.urlopen(pedido, timeout=20):
-            pass
+        _pedido(servidor, "/registros", corpo)
+        if not registros:
+            return enviados
         banco.gravar_estado("enviado_ate", registros[-1]["versao"])
         enviados += len(registros)
+
+
+def aplicar(alteracao):
+    acao, usuario, valor = alteracao["acao"], alteracao["usuario"], alteracao["valor"]
+    if acao == "padrao":
+        cfg = config.carregar()
+        cfg["limite_diario_padrao"] = int(valor)
+        config.salvar(cfg)
+    elif acao == "limite":
+        banco.definir_limite(usuario, valor)
+    elif acao == "remover_limite":
+        banco.remover_limite(usuario)
+    elif acao == "extra":
+        banco.adicionar_extra(usuario, valor)
+    elif acao == "controle":
+        banco.definir_controle(bool(valor))
+    else:
+        raise ValueError(f"ação desconhecida: {acao}")
+    log.info("Alteração do servidor aplicada: %s %s %s", acao, usuario or "", "" if valor is None else valor)
+
+
+def buscar_alteracoes(servidor):
+    """Aplica as alterações pedidas pelo site. Devolve quantas foram aplicadas."""
+    feitas = int(banco.ler_estado("alteracao_ate", 0))
+    alteracoes = json.loads(_pedido(servidor, f"/alteracoes?desde={feitas}"))
+    for alteracao in alteracoes:
+        aplicar(alteracao)
+        banco.gravar_estado("alteracao_ate", alteracao["id"])
+    if alteracoes:  # confirma ao servidor e atualiza lá os limites mostrados no site
+        _pedido(servidor, f"/alteracoes?desde={alteracoes[-1]['id']}")
+        enviar_pendentes(servidor, forcar=True)
+    return len(alteracoes)
 
 
 def _laco():
@@ -67,8 +111,9 @@ def _laco():
                 n = enviar_pendentes(servidor)
                 if n or falhando:
                     log.info("Servidor: %s registro(s) enviados", n)
+                buscar_alteracoes(servidor)
                 falhando = False
-            except (OSError, urllib.error.URLError, ValueError) as e:
+            except (OSError, urllib.error.URLError, ValueError, KeyError) as e:
                 if not falhando:  # avisa uma vez, não a cada minuto
                     log.warning("Servidor indisponível (%s); os registros esperam o próximo envio", e)
                 falhando = True
