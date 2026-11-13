@@ -101,6 +101,12 @@
     </form>
     <p id="msg"></p>
     <datalist id="conhecidos"></datalist>
+    <h2>Usuários do PC das cotas</h2>
+    <div class="tabela"><table>
+      <thead><tr><th>Usuário</th><th>Limite diário</th><th></th></tr></thead>
+      <tbody id="todos"></tbody>
+    </table></div>
+    <br>
     <h2>Últimas alterações</h2>
     <div class="tabela"><table>
       <thead><tr><th>Pedida em</th><th>Alteração</th><th>De onde</th><th>Situação</th></tr></thead>
@@ -131,7 +137,11 @@ if (D.admin) {
   $("admin").hidden = false;
   $("situacao").textContent = `Limite padrão: ${D.padrao} folhas por dia · Controle: ` +
     (D.controle ? "ativo" : "DESATIVADO (impressões sem desconto)");
-  $("conhecidos").innerHTML = D.admin.conhecidos.map(u => `<option value="${esc(u)}">`).join("");
+  $("conhecidos").innerHTML = D.admin.usuarios.map(([u]) => `<option value="${esc(u)}">`).join("");
+  $("todos").innerHTML = D.admin.usuarios.length ? D.admin.usuarios.map(([u, l, proprio]) =>
+    `<tr><td>${esc(u)}</td><td>${esc(l)}${proprio ? "" : (l === "isento" ? "" : " (padrão)")}</td>` +
+    `<td><button type="button" data-u="${esc(u)}">alterar</button></td></tr>`).join("")
+    : `<tr><td colspan="3" class="vazio">O PC das cotas ainda não enviou a lista de usuários.</td></tr>`;
   const descrever = a => ({
     limite: `limite de ${a.usuario}: ${a.valor} folhas`, extra: `+${a.valor} folhas hoje para ${a.usuario}`,
     remover_limite: `${a.usuario} volta ao padrão`, padrao: `limite padrão: ${a.valor} folhas`,
@@ -151,15 +161,17 @@ if (D.admin) {
   $("acao").onchange = campos;
   campos();
 
-  // "Alterar" na tabela de usuários preenche o formulário
+  // "alterar" nas tabelas preenche o formulário
+  const editar = u => { $("acao").value = "limite"; campos(); $("usuario").value = u;
+                        $("form").scrollIntoView({behavior: "smooth"}); $("valor").focus(); };
   document.querySelectorAll("#linhas tr").forEach((tr, i) => {
     if (!D.usuarios[i]) return;
     const b = document.createElement("button");
     b.type = "button"; b.textContent = "alterar";
-    b.onclick = () => { $("acao").value = "limite"; campos(); $("usuario").value = D.usuarios[i][0];
-                        $("admin").scrollIntoView({behavior: "smooth"}); $("valor").focus(); };
+    b.onclick = () => editar(D.usuarios[i][0]);
     tr.lastElementChild.append(" ", b);
   });
+  $("todos").querySelectorAll("button").forEach(b => b.onclick = () => editar(b.dataset.u));
 
   $("form").onsubmit = async ev => {
     ev.preventDefault();

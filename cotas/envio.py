@@ -8,6 +8,7 @@ nada para; tudo espera a próxima conversa.
 import json
 import logging
 import os
+import pwd
 import socket
 import threading
 import time
@@ -44,6 +45,12 @@ def _pedido(servidor, caminho, corpo=None):
         return resposta.read()
 
 
+def usuarios_do_sistema():
+    """Contas de pessoas neste PC (UID 1000+, com login), mesmo as que nunca imprimiram."""
+    return sorted({banco.normalizar(p.pw_name) for p in pwd.getpwall()
+                   if 1000 <= p.pw_uid < 60000 and not p.pw_shell.endswith(("nologin", "false"))})
+
+
 def enviar_pendentes(servidor, forcar=False):
     """Envia tudo o que falta, em lotes. Devolve quantos registros foram enviados.
 
@@ -62,7 +69,8 @@ def enviar_pendentes(servidor, forcar=False):
             "registros": registros,
             "limites": {"padrao": cfg["limite_diario_padrao"], "isentos": cfg["usuarios_isentos"],
                         "proprios": banco.limites_proprios(),
-                        "controle": banco.estado()["controle_ativo"]},
+                        "controle": banco.estado()["controle_ativo"],
+                        "usuarios": usuarios_do_sistema()},
         }).encode()
         _pedido(servidor, "/registros", corpo)
         if not registros:
@@ -105,11 +113,13 @@ def buscar_alteracoes(servidor):
 
 def _laco():
     falhando = False
+    primeira = True  # ao iniciar, manda a situação atual (usuários, limites) mesmo sem impressão nova
     while True:
         servidor = carregar()
         if servidor:
             try:
-                n = enviar_pendentes(servidor)
+                n = enviar_pendentes(servidor, forcar=primeira)
+                primeira = False
                 if n or falhando:
                     log.info("Servidor: %s registro(s) enviados", n)
                 buscar_alteracoes(servidor)
