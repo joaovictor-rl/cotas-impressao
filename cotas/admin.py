@@ -10,6 +10,8 @@
   cotas-admin relatorio 2026-10     consumo do mês (--planilha arquivo.xlsx para o Excel)
   cotas-admin senha                 troca a senha do painel
   cotas-admin rede ligar|desligar   relatórios pela rede (pede uma senha só para eles)
+  cotas-admin servidor IP CHAVE     envia os registros ao servidor central
+  cotas-admin servidor desligar     para de enviar
   cotas-admin ativar | desativar    liga/desliga o controle
   cotas-admin diagnostico           verifica serviço, impressoras e fila
 """
@@ -22,7 +24,7 @@ import sqlite3
 import subprocess
 import sys
 
-from . import banco, config, diagnostico, relatorio
+from . import banco, config, diagnostico, envio, relatorio
 
 
 def tabela(cabecalho, linhas):
@@ -129,6 +131,29 @@ def rede(a, cfg):
     print(f"Relatórios na rede: http://{ip}:{cfg['porta_relatorio']}/relatorio")
 
 
+def servidor(a, cfg):
+    if a.endereco == "desligar":
+        config.ARQ_SERVIDOR.unlink(missing_ok=True)
+        return print("Envio ao servidor desligado.")
+    if a.endereco is None:
+        atual = envio.carregar()
+        pendentes = len(banco.pendentes(int(banco.ler_estado("enviado_ate", -1)), limite=10**9))
+        return print(f"Servidor: {atual['url'] if atual else 'nenhum'} · {pendentes} registro(s) "
+                     "aguardando envio")
+    if not a.chave:
+        sys.exit("Informe a chave mostrada na instalação do servidor.")
+    url = a.endereco if "://" in a.endereco else f"http://{a.endereco}:{cfg['porta_relatorio']}"
+    novo = {"url": url, "chave": a.chave}
+    banco.gravar_estado("enviado_ate", -1)  # servidor novo recebe o histórico inteiro
+    try:
+        n = envio.enviar_pendentes(novo)
+    except Exception as e:
+        sys.exit(f"Não consegui enviar para {url}: {e}\nConfira o IP, a chave e se o servidor está ligado.")
+    envio.salvar(url, a.chave)
+    print(f"Servidor configurado: {url} ({n} registro(s) enviados agora). "
+          "Daqui em diante o envio é automático, a cada minuto.")
+
+
 def controle(ativo):
     def comando(a, cfg):
         banco.definir_controle(ativo)
@@ -170,6 +195,9 @@ def main(argv=None):
     sub.choices["relatorio"].add_argument("--planilha")
     comando("senha", senha)
     comando("rede", rede).add_argument("acao", choices=["ligar", "desligar"])
+    s = comando("servidor", servidor)
+    s.add_argument("endereco", nargs="?")
+    s.add_argument("chave", nargs="?")
     comando("ativar", controle(True))
     comando("desativar", controle(False))
     comando("diagnostico", verificar)

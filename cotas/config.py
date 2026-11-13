@@ -9,6 +9,7 @@ PASTA_DADOS = Path("/var/lib/cotas-impressao")
 PASTA_CONFIG = Path(os.environ.get("COTAS_CONFIG_DIR", PASTA_CONFIG))
 PASTA_DADOS = Path(os.environ.get("COTAS_DATA_DIR", PASTA_DADOS))
 ARQ_CONFIG = PASTA_CONFIG / "config.json"
+ARQ_SERVIDOR = PASTA_CONFIG / "servidor.json"  # endereço e chave do servidor central
 ARQ_BANCO = PASTA_DADOS / "cotas.db"
 ARQ_LOG = PASTA_DADOS / "servico.log"
 
