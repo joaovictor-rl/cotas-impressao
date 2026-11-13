@@ -13,6 +13,10 @@ from contextlib import contextmanager
 from . import config
 
 LIBERADAS = ("liberado", "isento", "desativado")
+SITUACOES = LIBERADAS + ("bloqueado", "estornado")
+# Toda inclusão ou mudança em "trabalhos" ganha uma versão maior que todas as anteriores:
+# assim o envio ao servidor sabe exatamente o que ainda não mandou.
+NOVA_VERSAO = "(SELECT COALESCE(MAX(versao), 0) + 1 FROM trabalhos)"
 ITERACOES = 200_000
 _lock = threading.Lock()
 
@@ -23,7 +27,8 @@ CREATE TABLE IF NOT EXISTS extras (usuario TEXT, data TEXT, folhas INTEGER,
 CREATE TABLE IF NOT EXISTS trabalhos (
     id INTEGER PRIMARY KEY AUTOINCREMENT, chave TEXT UNIQUE NOT NULL,
     usuario TEXT NOT NULL, impressora TEXT, titulo TEXT, folhas INTEGER NOT NULL,
-    situacao TEXT NOT NULL, motivo TEXT, data TEXT NOT NULL, hora TEXT NOT NULL);
+    situacao TEXT NOT NULL, motivo TEXT, data TEXT NOT NULL, hora TEXT NOT NULL,
+    versao INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS idx_usuario_data ON trabalhos (usuario, data);
 CREATE TABLE IF NOT EXISTS estado (chave TEXT PRIMARY KEY, valor TEXT NOT NULL);
 """
@@ -53,6 +58,9 @@ def inicializar():
     with conectar() as c:
         c.execute("PRAGMA journal_mode=WAL")
         c.executescript(ESQUEMA)
+        if "versao" not in {col[1] for col in c.execute("PRAGMA table_info(trabalhos)")}:
+            c.execute("ALTER TABLE trabalhos ADD COLUMN versao INTEGER NOT NULL DEFAULT 0")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_versao ON trabalhos (versao)")
 
 
 def _um(c, sql, args, padrao=None):
@@ -134,7 +142,7 @@ def decidir(chave, usuario, impressora, titulo, folhas, cfg):
 
         agora = dt.datetime.now()
         c.execute("INSERT INTO trabalhos (chave, usuario, impressora, titulo, folhas, situacao, "
-                  "motivo, data, hora) VALUES (?,?,?,?,?,?,?,?,?)",
+                  f"motivo, data, hora, versao) VALUES (?,?,?,?,?,?,?,?,?,{NOVA_VERSAO})",
                   (chave, usuario, impressora, (titulo or "")[:200], folhas, sit, motivo,
                    agora.date().isoformat(), agora.strftime("%H:%M:%S")))
         return sit in LIBERADAS, sit, motivo
@@ -162,8 +170,9 @@ def adicionar_extra(usuario, folhas):
 def estornar_hoje(usuario):
     """Devolve as folhas usadas hoje, mantendo o histórico."""
     with conectar() as c:
-        return c.execute("UPDATE trabalhos SET situacao='estornado' WHERE usuario=? AND data=? "
-                         "AND situacao='liberado'", (normalizar(usuario), hoje())).rowcount
+        return c.execute(f"UPDATE trabalhos SET situacao='estornado', versao={NOVA_VERSAO} "
+                         "WHERE usuario=? AND data=? AND situacao='liberado'",
+                         (normalizar(usuario), hoje())).rowcount
 
 
 def limites_proprios():
@@ -243,6 +252,37 @@ def conferir_senha(senha, chave="senha"):
         return hmac.compare_digest(_hash(senha, bytes.fromhex(sal), int(iteracoes)), esperado)
     except (AttributeError, ValueError):
         return False
+
+
+def ler_estado(chave, padrao=None):
+    with conectar() as c:
+        return _get(c, chave, padrao)
+
+
+def gravar_estado(chave, valor):
+    with conectar() as c:
+        _set(c, chave, valor)
+
+
+# ---------------------------------------------------------------- servidor central
+
+def pendentes(desde, limite=500):
+    """Registros incluídos ou alterados depois da versão `desde` (sem o título do documento)."""
+    with conectar() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT chave, usuario, impressora, folhas, situacao, data, hora, versao "
+            "FROM trabalhos WHERE versao > ? ORDER BY versao LIMIT ?", (desde, limite))]
+
+
+def gravar_remotos(origem, registros):
+    """No servidor: grava o que veio de um PC. Repetido não duplica, só atualiza."""
+    with conectar() as c:
+        for r in registros:
+            c.execute("INSERT INTO trabalhos (chave, usuario, impressora, titulo, folhas, situacao, "
+                      "data, hora) VALUES (?,?,?,'',?,?,?,?) ON CONFLICT(chave) DO UPDATE SET "
+                      "folhas=excluded.folhas, situacao=excluded.situacao",
+                      (f"{origem}:{r['chave']}", r["usuario"], r["impressora"], r["folhas"],
+                       r["situacao"], r["data"], r["hora"]))
 
 
 def definir_controle(ativo):
