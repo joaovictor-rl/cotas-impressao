@@ -4,6 +4,8 @@ A porta da rede só lê: não dá para mudar cotas nem desligar o controle por e
 """
 import base64
 import datetime as dt
+import hashlib
+import hmac
 import io
 import json
 import logging
@@ -87,8 +89,11 @@ def nome_mes(mes):
 def pagina_html(mes):
     r = banco.relatorio(mes)
     cfg = config.carregar()
-    proprios = banco.limites_proprios()
-    isentos = {banco.normalizar(u) for u in cfg["usuarios_isentos"]}
+    # No servidor central, os limites são os que o PC das cotas mandou junto com os registros
+    remotos = json.loads(banco.ler_estado("limites_remotos", "null"))
+    padrao = remotos["padrao"] if remotos else cfg["limite_diario_padrao"]
+    proprios = remotos["proprios"] if remotos else banco.limites_proprios()
+    isentos = {banco.normalizar(u) for u in (remotos["isentos"] if remotos else cfg["usuarios_isentos"])}
 
     ano, m = map(int, mes.split("-"))
     folhas_dia = {d["data"]: d["folhas"] for d in r["dias"]}
@@ -103,7 +108,7 @@ def pagina_html(mes):
         "meses": [[x, nome_mes(x)] for x in meses],
         "usuarios": [[u["usuario"], u["folhas"], u["impressoes"], u["bloqueios"],
                       "isento" if u["usuario"] in isentos
-                      else proprios.get(u["usuario"], cfg["limite_diario_padrao"])]
+                      else proprios.get(u["usuario"], padrao)]
                      for u in r["usuarios"]],
     }
     # "</" escapado: um nome de usuário não consegue fechar a tag <script>
@@ -111,22 +116,55 @@ def pagina_html(mes):
         "/*DADOS*/null", json.dumps(dados, ensure_ascii=False).replace("</", "<\\/"))
 
 
-def _senha_ok(ip, cabecalho):
+def _tentativa(ip, conferir):
+    """Depois de MAX_ERROS erros seguidos, o IP espera ESPERA segundos."""
     with _lock:
         erros, ate = _erros.get(ip, (0, 0.0))
         if time.time() < ate:
             return False
-        try:
-            senha = base64.b64decode(cabecalho.split(" ", 1)[1]).decode().split(":", 1)[1]
-        except (IndexError, ValueError):
-            return False
-        if banco.conferir_senha(senha, "senha_relatorio"):
+        if conferir():
             _erros.pop(ip, None)
             return True
         erros += 1
         _erros[ip] = (0, time.time() + ESPERA) if erros >= MAX_ERROS else (erros, 0.0)
-    log.warning("Senha errada no relatório vinda de %s", ip)
+    log.warning("Senha ou chave errada vinda de %s", ip)
     return False
+
+
+def _senha_ok(ip, cabecalho):
+    try:
+        senha = base64.b64decode(cabecalho.split(" ", 1)[1]).decode().split(":", 1)[1]
+    except (IndexError, ValueError):
+        return False  # navegador ainda não mandou senha: não conta como erro
+    return _tentativa(ip, lambda: banco.conferir_senha(senha, "senha_relatorio"))
+
+
+def hash_chave(chave):
+    return hashlib.sha256(chave.encode()).hexdigest()
+
+
+def _chave_ok(ip, cabecalho):
+    guardada = banco.ler_estado("chave_central")
+    if not guardada or not cabecalho.startswith("Bearer "):
+        return False
+    return _tentativa(ip, lambda: hmac.compare_digest(hash_chave(cabecalho[7:]), guardada))
+
+
+def _validar(dados):
+    """Só aceita registros no formato esperado; qualquer coisa estranha recusa o lote inteiro."""
+    origem = dados["origem"]
+    if not re.fullmatch(r"[\w.-]{1,64}", origem) or not isinstance(dados["registros"], list):
+        raise ValueError("origem ou lista inválida")
+    limpos = []
+    for r in dados["registros"][:1000]:
+        if not (isinstance(r["folhas"], int) and 0 <= r["folhas"] <= 100_000
+                and r["situacao"] in banco.SITUACOES
+                and re.fullmatch(r"\d{4}-\d{2}-\d{2}", r["data"])
+                and re.fullmatch(r"\d{2}:\d{2}(:\d{2})?", r["hora"])):
+            raise ValueError(f"registro inválido: {r.get('chave')!r}")
+        limpos.append({k: str(r[k])[:100] if isinstance(r[k], str) else r[k]
+                       for k in ("chave", "usuario", "impressora", "folhas", "situacao", "data", "hora")})
+    return origem, limpos
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -146,6 +184,25 @@ class _Handler(BaseHTTPRequestHandler):
             self.enviar(200, XLSX, planilha_mes(mes), f"relatorio_{mes}.xlsx")
         else:
             self.enviar(404, "text/plain", "Não encontrado.")
+
+    def do_POST(self):
+        """Servidor central: recebe os registros enviados pelos PCs com cotas."""
+        if urlparse(self.path).path != "/registros":
+            return self.enviar(404, "text/plain", "Não encontrado.")
+        if not _chave_ok(self.client_address[0], self.headers.get("Authorization", "")):
+            return self.enviar(401, "text/plain", "Chave inválida.")
+        try:
+            tamanho = int(self.headers.get("Content-Length", 0))
+            if not 0 < tamanho <= 5_000_000:
+                raise ValueError("tamanho inválido")
+            dados = json.loads(self.rfile.read(tamanho))
+            origem, registros = _validar(dados)
+        except (ValueError, KeyError, TypeError) as e:
+            return self.enviar(400, "text/plain", f"Dados inválidos: {e}")
+        banco.gravar_remotos(origem, registros)
+        if isinstance(dados.get("limites"), dict):
+            banco.gravar_estado("limites_remotos", json.dumps(dados["limites"]))
+        self.enviar(200, "application/json", json.dumps({"recebidos": len(registros)}))
 
     def enviar(self, codigo, tipo, conteudo, arquivo=None):
         corpo = conteudo if isinstance(conteudo, bytes) else conteudo.encode()
@@ -168,3 +225,4 @@ def iniciar(porta):
     srv.daemon_threads = True
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     log.info("Relatórios na rede pela porta %s", porta)
+    return srv
