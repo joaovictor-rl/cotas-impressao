@@ -4,6 +4,7 @@ Não controla impressoras. Uso (o instalador cria o comando cotas-servidor):
   cotas-servidor            roda o servidor (o systemd faz isso)
   cotas-servidor chave      gera uma nova chave para os PCs enviarem registros
   cotas-servidor senha      cria ou troca a senha da página de relatórios
+  cotas-servidor admin      cria ou troca a senha para alterar cotas pelo site
   cotas-servidor backup     copia o banco para a pasta backups (guarda as 8 últimas)
 """
 import contextlib
@@ -29,12 +30,23 @@ def nova_chave():
     print("No PC das cotas:  sudo cotas-admin servidor IP-DESTE-SERVIDOR " + chave)
 
 
-def nova_senha():
-    senha = getpass.getpass("Senha da página de relatórios: ")
+def _pedir_senha(titulo, chave, outra):
+    senha = getpass.getpass(f"{titulo}: ")
     if len(senha) < 4 or getpass.getpass("Repita a senha: ") != senha:
         sys.exit("Senha inválida (mínimo 4 caracteres) ou as duas não conferem.")
-    banco.definir_senha(senha, substituir=True, chave="senha_relatorio")
+    if banco.conferir_senha(senha, outra):
+        sys.exit("Use uma senha diferente da outra senha do servidor.")
+    banco.definir_senha(senha, substituir=True, chave=chave)
     print("Senha definida.")
+
+
+def nova_senha():
+    _pedir_senha("Senha da página de relatórios", "senha_relatorio", "senha_admin_central")
+
+
+def nova_senha_admin():
+    _pedir_senha("Senha do administrador (alterar cotas pelo site)", "senha_admin_central",
+                 "senha_relatorio")
 
 
 def backup():
@@ -52,7 +64,7 @@ def backup():
 def main(argv):
     config.garantir_pastas()
     banco.inicializar()
-    acoes = {"chave": nova_chave, "senha": nova_senha, "backup": backup}
+    acoes = {"chave": nova_chave, "senha": nova_senha, "admin": nova_senha_admin, "backup": backup}
     if argv:
         if argv[0] not in acoes:
             sys.exit(__doc__)

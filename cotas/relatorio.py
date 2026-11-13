@@ -150,6 +150,28 @@ def _chave_ok(ip, cabecalho):
     return _tentativa(ip, lambda: hmac.compare_digest(hash_chave(cabecalho[7:]), guardada))
 
 
+ACOES = {  # ação -> (precisa de usuário, menor valor, maior valor); None = sem valor
+    "padrao": (False, 0, 1000), "limite": (True, 0, 1000), "remover_limite": (True, None, None),
+    "extra": (True, 1, 1000), "controle": (False, 0, 1),
+}
+
+
+def _validar_alteracao(dados):
+    acao = dados.get("acao")
+    if acao not in ACOES:
+        raise ValueError("ação desconhecida")
+    com_usuario, minimo, maximo = ACOES[acao]
+    usuario = banco.normalizar(str(dados.get("usuario") or "")) if com_usuario else None
+    if com_usuario and not re.fullmatch(r"[\w.-]{1,64}", usuario):
+        raise ValueError("usuário inválido")
+    valor = None
+    if minimo is not None:
+        valor = dados.get("valor")
+        if not isinstance(valor, int) or not minimo <= valor <= maximo:
+            raise ValueError(f"valor deve ser um número entre {minimo} e {maximo}")
+    return acao, usuario, valor
+
+
 def _validar(dados):
     """Só aceita registros no formato esperado; qualquer coisa estranha recusa o lote inteiro."""
     origem = dados["origem"]
@@ -169,6 +191,15 @@ def _validar(dados):
 
 class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if urlparse(self.path).path == "/alteracoes":  # o PC das cotas buscando o que aplicar
+            if not _chave_ok(self.client_address[0], self.headers.get("Authorization", "")):
+                return self.enviar(401, "text/plain", "Chave inválida.")
+            try:
+                desde = int(parse_qs(urlparse(self.path).query).get("desde", ["0"])[0])
+            except ValueError:
+                return self.enviar(400, "text/plain", "desde inválido")
+            return self.enviar(200, "application/json",
+                               json.dumps(banco.alteracoes_para_aplicar(desde)))
         if not _senha_ok(self.client_address[0], self.headers.get("Authorization", "")):
             self.send_response(401)
             self.send_header("WWW-Authenticate", 'Basic realm="Cotas de impressao", charset="UTF-8"')
@@ -185,17 +216,25 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self.enviar(404, "text/plain", "Não encontrado.")
 
+    def ler_json(self):
+        tamanho = int(self.headers.get("Content-Length", 0))
+        if not 0 < tamanho <= 5_000_000:
+            raise ValueError("tamanho inválido")
+        dados = json.loads(self.rfile.read(tamanho))
+        if not isinstance(dados, dict):
+            raise ValueError("formato inválido")
+        return dados
+
     def do_POST(self):
-        """Servidor central: recebe os registros enviados pelos PCs com cotas."""
-        if urlparse(self.path).path != "/registros":
+        caminho = urlparse(self.path).path
+        if caminho == "/alterar":
+            return self.alterar()
+        if caminho != "/registros":
             return self.enviar(404, "text/plain", "Não encontrado.")
         if not _chave_ok(self.client_address[0], self.headers.get("Authorization", "")):
             return self.enviar(401, "text/plain", "Chave inválida.")
         try:
-            tamanho = int(self.headers.get("Content-Length", 0))
-            if not 0 < tamanho <= 5_000_000:
-                raise ValueError("tamanho inválido")
-            dados = json.loads(self.rfile.read(tamanho))
+            dados = self.ler_json()
             origem, registros = _validar(dados)
         except (ValueError, KeyError, TypeError) as e:
             return self.enviar(400, "text/plain", f"Dados inválidos: {e}")
@@ -203,6 +242,25 @@ class _Handler(BaseHTTPRequestHandler):
         if isinstance(dados.get("limites"), dict):
             banco.gravar_estado("limites_remotos", json.dumps(dados["limites"]))
         self.enviar(200, "application/json", json.dumps({"recebidos": len(registros)}))
+
+    def alterar(self):
+        """Servidor central: o site pede uma alteração de cota (senha de administrador própria)."""
+        ip = self.client_address[0]
+        if not banco.ler_estado("chave_central"):
+            return self.enviar(404, "text/plain", "Disponível só no servidor central.")
+        if not _senha_ok(ip, self.headers.get("Authorization", "")):
+            return self.enviar(401, "text/plain", "Entre na página de relatórios primeiro.")
+        try:
+            dados = self.ler_json()
+            senha = str(dados.get("senha", ""))
+            if not _tentativa(ip, lambda: banco.conferir_senha(senha, "senha_admin_central")):
+                return self.enviar(403, "text/plain", "Senha do administrador incorreta.")
+            acao, usuario, valor = _validar_alteracao(dados)
+        except (ValueError, TypeError) as e:
+            return self.enviar(400, "text/plain", str(e))
+        banco.pedir_alteracao(acao, usuario, valor, ip)
+        log.info("Alteração pedida por %s: %s %s %s", ip, acao, usuario or "", valor)
+        self.enviar(200, "text/plain", "Pedido registrado: o PC das cotas aplica em até 1 minuto.")
 
     def enviar(self, codigo, tipo, conteudo, arquivo=None):
         corpo = conteudo if isinstance(conteudo, bytes) else conteudo.encode()

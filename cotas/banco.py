@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS trabalhos (
     versao INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS idx_usuario_data ON trabalhos (usuario, data);
 CREATE TABLE IF NOT EXISTS estado (chave TEXT PRIMARY KEY, valor TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS alteracoes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, acao TEXT NOT NULL, usuario TEXT, valor INTEGER,
+    pedida_em TEXT NOT NULL, ip TEXT, aplicada_em TEXT);
 """
 
 
@@ -283,6 +286,30 @@ def gravar_remotos(origem, registros):
                       "folhas=excluded.folhas, situacao=excluded.situacao",
                       (f"{origem}:{r['chave']}", r["usuario"], r["impressora"], r["folhas"],
                        r["situacao"], r["data"], r["hora"]))
+
+
+def pedir_alteracao(acao, usuario, valor, ip):
+    """No servidor: guarda a alteração até o PC das cotas buscar (a cada minuto)."""
+    with conectar() as c:
+        c.execute("INSERT INTO alteracoes (acao, usuario, valor, pedida_em, ip) VALUES (?,?,?,?,?)",
+                  (acao, usuario, valor, dt.datetime.now().strftime("%d/%m %H:%M"), ip))
+
+
+def alteracoes_para_aplicar(ja_aplicadas):
+    """O PC avisa até qual alteração já aplicou e recebe as seguintes."""
+    agora = dt.datetime.now().strftime("%d/%m %H:%M")
+    with conectar() as c:
+        c.execute("UPDATE alteracoes SET aplicada_em=? WHERE id<=? AND aplicada_em IS NULL",
+                  (agora, ja_aplicadas))
+        return [dict(r) for r in c.execute(
+            "SELECT id, acao, usuario, valor FROM alteracoes WHERE id>? ORDER BY id", (ja_aplicadas,))]
+
+
+def alteracoes_recentes(n=10):
+    with conectar() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT acao, usuario, valor, pedida_em, ip, aplicada_em FROM alteracoes "
+            "ORDER BY id DESC LIMIT ?", (n,))]
 
 
 def definir_controle(ativo):
